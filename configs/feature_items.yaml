@@ -1,0 +1,37 @@
+# Danh sách xét nghiệm / sinh hiệu dự kiến — TV4 sở hữu
+# KHÔNG hardcode itemid: script stage1 sẽ tra d_labitems / d_items theo label + fluid
+# rồi in ra các itemid ứng viên kèm số lần đo; TV4 chọn itemid cuối và ghi vào feature_spec.md.
+
+labs:   # nguồn: hosp/labevents + hosp/d_labitems, fluid = Blood
+  ntprobnp:    {label_regex: "^NTproBNP$",            fluid: Blood, unit_hint: "pg/mL"}
+  creatinine:  {label_regex: "^Creatinine$",          fluid: Blood, unit_hint: "mg/dL"}
+  bun:         {label_regex: "^Urea Nitrogen$",       fluid: Blood, unit_hint: "mg/dL"}
+  sodium:      {label_regex: "^Sodium$",              fluid: Blood, unit_hint: "mEq/L"}
+  potassium:   {label_regex: "^Potassium$",           fluid: Blood, unit_hint: "mEq/L"}
+  chloride:    {label_regex: "^Chloride$",            fluid: Blood, unit_hint: "mEq/L"}
+  bicarbonate: {label_regex: "^Bicarbonate$",         fluid: Blood, unit_hint: "mEq/L"}
+  anion_gap:   {label_regex: "^Anion Gap$",           fluid: Blood, unit_hint: "mEq/L"}
+  glucose:     {label_regex: "^Glucose$",             fluid: Blood, unit_hint: "mg/dL"}
+  hemoglobin:  {label_regex: "^Hemoglobin$",          fluid: Blood, unit_hint: "g/dL"}
+  hematocrit:  {label_regex: "^Hematocrit$",          fluid: Blood, unit_hint: "%"}
+  wbc:         {label_regex: "^White Blood Cells$",   fluid: Blood, unit_hint: "K/uL"}
+  platelet:    {label_regex: "^Platelet Count$",      fluid: Blood, unit_hint: "K/uL"}
+  rdw:         {label_regex: "^RDW$",                 fluid: Blood, unit_hint: "%"}
+  troponin_t:  {label_regex: "^Troponin T$",          fluid: Blood, unit_hint: "ng/mL"}
+  lactate:     {label_regex: "^Lactate$",             fluid: Blood, unit_hint: "mmol/L"}
+  albumin:     {label_regex: "^Albumin$",             fluid: Blood, unit_hint: "g/dL"}
+  magnesium:   {label_regex: "^Magnesium$",           fluid: Blood, unit_hint: "mg/dL"}
+  bilirubin:   {label_regex: "^Bilirubin, Total$",    fluid: Blood, unit_hint: "mg/dL"}
+  inr:         {label_regex: "^INR\\(PT\\)$",         fluid: Blood, unit_hint: ""}
+
+vitals:  # nguồn: icu/chartevents + icu/d_items (CHỈ có cho ca nằm ICU)
+  heart_rate:  {label_regex: "^Heart Rate$"}
+  sbp:         {label_regex: "^(Non Invasive Blood Pressure systolic|Arterial Blood Pressure systolic)$"}
+  dbp:         {label_regex: "^(Non Invasive Blood Pressure diastolic|Arterial Blood Pressure diastolic)$"}
+  mbp:         {label_regex: "^(Non Invasive Blood Pressure mean|Arterial Blood Pressure mean)$"}
+  resp_rate:   {label_regex: "^Respiratory Rate$"}
+  spo2:        {label_regex: "^O2 saturation pulseoxymetry$"}
+  temperature: {label_regex: "^Temperature (Fahrenheit|Celsius)$"}
+
+omr:  # nguồn: hosp/omr — sinh hiệu/nhân trắc ngoại trú & lịch sử, dùng cho phần "History"
+  result_names: ["Blood Pressure", "Weight (Lbs)", "BMI (kg/m2)", "Height (Inches)", "eGFR"]

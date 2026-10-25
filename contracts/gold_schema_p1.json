@@ -1,0 +1,72 @@
+{
+  "task": "P1",
+  "description": "Gold table for in-hospital mortality, prediction at admittime + 24h. One row per hadm_id.",
+  "schema_version": "0.1",
+  "primary_key": ["hadm_id"],
+  "group_key": "subject_id",
+  "label": "label_mortality",
+  "id_columns": [
+    {"name": "subject_id", "type": "long"},
+    {"name": "hadm_id", "type": "long"},
+    {"name": "admittime", "type": "timestamp"},
+    {"name": "prediction_time", "type": "timestamp"},
+    {"name": "anchor_year_group", "type": "string", "role": "split_drift_only"}
+  ],
+  "label_columns": [
+    {"name": "label_mortality", "type": "int", "values": [0, 1]}
+  ],
+  "subgroup_only_columns": [
+    {"name": "race_group", "type": "string", "note": "fairness evaluation only, never a model input"},
+    {"name": "insurance", "type": "string", "note": "fairness evaluation only, never a model input"},
+    {"name": "hf_primary", "type": "int", "note": "HF is seq_num=1; current-admission ICD → subgroup only"},
+    {"name": "icd_version_group", "type": "string", "values": ["ICD9", "ICD10", "MIXED"]}
+  ],
+  "feature_columns": {
+    "demographic_admission": [
+      {"name": "age", "type": "double"},
+      {"name": "gender_male", "type": "int"},
+      {"name": "admission_type_group", "type": "string", "values": ["EMERGENCY", "URGENT", "OBSERVATION", "ELECTIVE", "UNKNOWN"]},
+      {"name": "admission_location_group", "type": "string", "values": ["EMERGENCY_ROOM", "TRANSFER", "REFERRAL", "OTHER", "UNKNOWN"]},
+      {"name": "came_from_ed", "type": "int"},
+      {"name": "in_icu_24h", "type": "int"}
+    ],
+    "history": [
+      {"name": "n_prior_adm_365d", "type": "int"},
+      {"name": "n_prior_hf_adm", "type": "int"},
+      {"name": "first_admission", "type": "int"},
+      {"name": "days_since_last_discharge", "type": "double", "nullable": true},
+      {"name": "hx_ckd", "type": "int"},
+      {"name": "hx_diabetes", "type": "int"},
+      {"name": "hx_afib", "type": "int"},
+      {"name": "hx_copd", "type": "int"},
+      {"name": "hx_hypertension", "type": "int"},
+      {"name": "hx_cad", "type": "int"},
+      {"name": "hx_prior_mi", "type": "int"},
+      {"name": "hx_stroke", "type": "int"},
+      {"name": "omr_bmi_last", "type": "double", "nullable": true},
+      {"name": "omr_weight_last", "type": "double", "nullable": true},
+      {"name": "omr_sbp_last", "type": "double", "nullable": true},
+      {"name": "omr_egfr_last", "type": "double", "nullable": true}
+    ],
+    "labs": {
+      "items": ["ntprobnp", "creatinine", "bun", "sodium", "potassium", "chloride", "bicarbonate", "anion_gap", "glucose", "hemoglobin", "hematocrit", "wbc", "platelet", "rdw", "troponin_t", "lactate", "albumin", "magnesium", "bilirubin", "inr"],
+      "suffixes": {"_first": "double", "_min": "double", "_max": "double", "_missing": "int"},
+      "extra": [{"name": "n_lab_tests_24h", "type": "int"}]
+    },
+    "vitals_icu": [
+      {"name": "hr_mean", "type": "double", "nullable": true},
+      {"name": "hr_max", "type": "double", "nullable": true},
+      {"name": "sbp_min", "type": "double", "nullable": true},
+      {"name": "sbp_mean", "type": "double", "nullable": true},
+      {"name": "dbp_mean", "type": "double", "nullable": true},
+      {"name": "mbp_min", "type": "double", "nullable": true},
+      {"name": "rr_mean", "type": "double", "nullable": true},
+      {"name": "rr_max", "type": "double", "nullable": true},
+      {"name": "spo2_min", "type": "double", "nullable": true},
+      {"name": "temp_max_c", "type": "double", "nullable": true},
+      {"name": "vitals_missing", "type": "int"}
+    ]
+  },
+  "forbidden_columns": ["dischtime", "deathtime", "discharge_location", "hospital_expire_flag", "los", "dod", "los_icu", "outtime"],
+  "storage": "s3a://heartguard-mimic-group11/gold/p1/<data_version>/ (Parquet)"
+}

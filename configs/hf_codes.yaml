@@ -1,0 +1,32 @@
+# Bộ mã ICD xác định suy tim (heart failure) — ĐỀ XUẤT, TV2 rà soát và nhóm duyệt
+# Khớp theo TIỀN TỐ trên icd_code đã bỏ dấu chấm (MIMIC-IV lưu không có dấu chấm, vd "I5022").
+
+heart_failure:
+  icd10:
+    - I50      # Heart failure (mọi mã con I50.x)
+    - I110     # Hypertensive heart disease with heart failure
+    - I130     # Hypertensive heart & CKD with HF and CKD stage 1-4
+    - I132     # Hypertensive heart & CKD with HF and CKD stage 5/ESRD
+    - I0981    # Rheumatic heart failure
+  icd9:
+    - "428"    # Heart failure (mọi mã con 428.x)
+    - "40201"
+    - "40211"
+    - "40291"
+    - "40401"
+    - "40403"
+    - "40411"
+    - "40413"
+    - "40491"
+    - "40493"
+
+# Bệnh kèm — CHỈ được lấy từ các admission TRƯỚC admission hiện tại (chống leakage)
+comorbidities:
+  ckd:        {icd10: [N18], icd9: ["585"]}
+  diabetes:   {icd10: [E08, E09, E10, E11, E13], icd9: ["250"]}
+  afib:       {icd10: [I48], icd9: ["42731"]}
+  copd:       {icd10: [J44], icd9: ["491", "492", "496"]}
+  hypertension: {icd10: [I10, I11, I12, I13, I15, I16], icd9: ["401", "402", "403", "404", "405"]}
+  cad:        {icd10: [I25], icd9: ["414"]}
+  prior_mi:   {icd10: [I21, I22, I252], icd9: ["410", "412"]}
+  stroke:     {icd10: [I63, I64, G45], icd9: ["433", "434", "435", "436"]}

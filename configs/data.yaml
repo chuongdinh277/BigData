@@ -1,0 +1,34 @@
+# HeartGuard AI — cấu hình dữ liệu dùng chung (Giai đoạn 1)
+# Mọi script đọc đường dẫn từ đây, không hardcode trong code.
+
+dataset:
+  name: MIMIC-IV
+  version: "3.1"
+  bucket: heartguard-mimic-group11
+  region: us-east-1
+
+paths:
+  # Bronze = bản gốc tải từ PhysioNet, KHÔNG sửa
+  bronze: s3a://heartguard-mimic-group11/bronze/mimiciv/3.1
+  # Silver = cùng bảng nhưng đã ép kiểu + Parquet (Giai đoạn 2, TV1/TV5)
+  silver: s3a://heartguard-mimic-group11/silver/mimiciv/3.1
+  # Gold = bảng đặc trưng + nhãn theo từng bài toán
+  gold: s3a://heartguard-mimic-group11/gold
+  # Kết quả khảo sát Giai đoạn 1 (chỉ số liệu tổng hợp, không có dòng bệnh nhân)
+  stage1_reports: s3a://heartguard-mimic-group11/reports/stage1
+
+# Bảng dùng ở Giai đoạn 1–2 (module/bảng)
+tables:
+  hosp: [patients, admissions, diagnoses_icd, d_icd_diagnoses, labevents, d_labitems, omr, transfers]
+  icu:  [icustays, chartevents, d_items]
+
+prediction:
+  p1_index_hours: 24          # P1: dự đoán tại admittime + 24h
+  lab_lookback_hours: 6       # cho phép lấy xét nghiệm ở ED tối đa 6h trước admittime
+  p2_window_days: 30          # P2: tái nhập trong 30 ngày
+  p3_window_days: 90          # P3: tử vong trong 90 ngày sau xuất viện
+  min_age: 18
+
+privacy:
+  # Ô thống kê nhỏ hơn ngưỡng này sẽ bị che khi xuất báo cáo
+  small_cell_threshold: 10

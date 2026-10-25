@@ -1,0 +1,44 @@
+# ---- DỮ LIỆU MIMIC: TUYỆT ĐỐI KHÔNG COMMIT (DUA PhysioNet) ----
+*.csv
+*.csv.gz
+*.parquet
+*.parquet/
+*.gz
+*.feather
+*.pkl
+*.joblib
+data/
+mimic*/
+reports/
+artifacts/models/
+mlruns/
+# dữ liệu giả thì được phép (tạo lại bằng tools/)
+!sample_data/
+!sample_data/**
+sample_data/mimic_fake/
+
+# ---- Bí mật ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*
+.aws/
+
+# ---- Python / Node / IDE ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+node_modules/
+dist/
+build/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+spark-warehouse/
+metastore_db/
+derby.log

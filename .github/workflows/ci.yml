@@ -1,0 +1,17 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install pyyaml pandas numpy pytest
+      - name: Chặn dữ liệu thật bị commit nhầm
+        run: |
+          if git ls-files | grep -Ei '\.(csv\.gz|parquet)$' | grep -v '^sample_data/'; then
+            echo "Phát hiện file dữ liệu ngoài sample_data/ — xóa khỏi commit!"; exit 1; fi
+      - run: python -m py_compile data_spark/*.py data_spark/common/*.py tools/*.py
+      - run: python tools/make_synthetic_gold.py --rows 200 --out /tmp/gold.csv
+      - run: pytest -q tests
