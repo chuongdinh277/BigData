@@ -1,0 +1,7 @@
+# Môi trường tối thiểu GĐ2, không cần cài ML/API của các giai đoạn sau.
+pyspark==3.5.3
+pyyaml>=6.0
+pandas>=2.2,<3
+numpy>=1.26,<3
+pyarrow>=15
+pytest>=8.3

@@ -16,6 +16,7 @@ mlruns/
 !sample_data/
 !sample_data/**
 sample_data/mimic_fake/
+sample_data/quality_fixture*/
 
 # ---- Bí mật ----
 .env

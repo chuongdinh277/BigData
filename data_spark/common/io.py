@@ -34,7 +34,7 @@ TABLE_SPECS: dict[str, dict] = {
     "labevents": {"module": "hosp", "cols": {
         "subject_id": "long", "hadm_id": "long", "itemid": "int",
         "charttime": "timestamp", "storetime": "timestamp",
-        "valuenum": "double", "valueuom": "string"}},
+        "value": "string", "valuenum": "double", "valueuom": "string"}},
     "omr": {"module": "hosp", "cols": {
         "subject_id": "long", "chartdate": "date", "seq_num": "int",
         "result_name": "string", "result_value": "string"}},
@@ -46,7 +46,8 @@ TABLE_SPECS: dict[str, dict] = {
         "category": "string", "unitname": "string"}},
     "chartevents": {"module": "icu", "cols": {
         "subject_id": "long", "hadm_id": "long", "stay_id": "long",
-        "itemid": "int", "charttime": "timestamp", "valuenum": "double",
+        "itemid": "int", "charttime": "timestamp", "storetime": "timestamp",
+        "value": "string", "valuenum": "double",
         "valueuom": "string"}},
 }
 
@@ -77,7 +78,11 @@ def read_table(spark: SparkSession, root: str, table: str, fmt: str = "bronze") 
     module = spec["module"]
     root = root.rstrip("/")
     if fmt == "silver":
-        return spark.read.parquet(f"{root}/{module}/{table}").select(*spec["cols"].keys())
+        silver = spark.read.parquet(f"{root}/{module}/{table}")
+        missing = set(spec["cols"]) - set(silver.columns)
+        if missing:
+            raise ValueError(f"Silver {table} thiếu {sorted(missing)}; chạy lại bronze_to_silver --tables {table} từ Bronze")
+        return silver.select(*spec["cols"].keys())
     raw = (
         spark.read.option("header", True)
         .option("inferSchema", False)

@@ -13,3 +13,5 @@ Trạng thái: `ĐỀ XUẤT` → `ĐÃ CHỐT` / `BỊ BÁC`.
 | D-006 | 25/10/2026 | Drift đánh giá **ngoại tuyến theo lô** `anchor_year_group` (có nhãn thật); chờ giảng viên xác nhận | TV5 | | ĐỀ XUẤT |
 | D-007 | 25/10/2026 | Cửa sổ xét nghiệm P1: `[admittime − 6h, admittime + 24h]` | TV4 | | ĐỀ XUẤT |
 | D-008 | 25/10/2026 | Ô thống kê < 10 được che khi chia sẻ báo cáo | TV1 | | ĐỀ XUẤT |
+| D-009 | 27/10/2026 | Chiến cung cấp danh sách itemid/đơn vị để code GĐ2 trên synthetic; chờ đối chiếu dictionary, fluid, độ phủ và tỷ lệ đơn vị >=95% trên MIMIC thật. Giữ `storetime <= prediction_time`; numeric-text bị bỏ và đếm riêng. Gold P1 dùng context và lineage độc lập để kiểm tra; không đưa dischtime vào feature | Chiến | | ĐỀ XUẤT |
+| D-010 | 27/10/2026 | Giữ `labevents.value` và `chartevents.value/storetime` trong Silver để đếm numeric-text và kiểm tra giờ có kết quả; Silver cũ thiếu cột phải chuyển lại đúng bảng từ Bronze, không gán timestamp giả để vượt kiểm tra | Chiến | | ĐỀ XUẤT |
