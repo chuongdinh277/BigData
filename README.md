@@ -101,6 +101,10 @@ Output `reports/stage1/stage1_feasibility.md` chỉ chứa số liệu tổng h�
 
 ## Quy tắc làm việc
 
+Phần quality/leakage GĐ2 của Chiến: [hướng dẫn chạy và hợp đồng bàn giao](docs/stage2/quality_usage.md),
+[kết quả kiểm chứng](docs/stage2/quality_report.md). Môi trường tối thiểu:
+`pip install -r requirements-quality.txt` và Java 17.
+
 - Nhánh `main` luôn chạy được. Mỗi người làm trên nhánh `tv<N>/<việc>`, mở Pull Request, cần ít nhất 1 người khác review.
 - Không ai sửa định nghĩa nhãn, cohort hay schema mà không ghi vào `decision_log.md`.
 - CI (`.github/workflows/ci.yml`) chặn commit nhầm `.csv.gz` / `.parquet` ngoài `sample_data/`.

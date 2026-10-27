@@ -1,37 +1,52 @@
-# Danh sách xét nghiệm / sinh hiệu dự kiến — TV4 sở hữu
-# KHÔNG hardcode itemid: script stage1 sẽ tra d_labitems / d_items theo label + fluid
-# rồi in ra các itemid ứng viên kèm số lần đo; TV4 chọn itemid cuối và ghi vào feature_spec.md.
+# Chiến — GĐ2. Giữ label_regex để stage1 tiếp tục phát hiện ứng viên.
+# itemids là danh sách triển khai đã chọn trên fixture synthetic, chưa xác nhận
+# trên MIMIC-IV thật. Chỉ dùng cho dữ liệu thật sau khi đối chiếu dictionary,
+# fluid và tỷ lệ đơn vị >= 0.95; không suy ra độ phủ thật từ dữ liệu giả.
+selection:
+  owner: Chien
+  status: synthetic_verified_pending_real
+  minimum_unit_share: 0.95
+  numeric_text_policy: exclude_and_count
+  evidence: reports/stage1_fake/stage1_feasibility.json
+  range_reference: docs/stage1/feature_spec.md
 
 labs:   # nguồn: hosp/labevents + hosp/d_labitems, fluid = Blood
-  ntprobnp:    {label_regex: "^NTproBNP$",            fluid: Blood, unit_hint: "pg/mL"}
-  creatinine:  {label_regex: "^Creatinine$",          fluid: Blood, unit_hint: "mg/dL"}
-  bun:         {label_regex: "^Urea Nitrogen$",       fluid: Blood, unit_hint: "mg/dL"}
-  sodium:      {label_regex: "^Sodium$",              fluid: Blood, unit_hint: "mEq/L"}
-  potassium:   {label_regex: "^Potassium$",           fluid: Blood, unit_hint: "mEq/L"}
-  chloride:    {label_regex: "^Chloride$",            fluid: Blood, unit_hint: "mEq/L"}
-  bicarbonate: {label_regex: "^Bicarbonate$",         fluid: Blood, unit_hint: "mEq/L"}
-  anion_gap:   {label_regex: "^Anion Gap$",           fluid: Blood, unit_hint: "mEq/L"}
-  glucose:     {label_regex: "^Glucose$",             fluid: Blood, unit_hint: "mg/dL"}
-  hemoglobin:  {label_regex: "^Hemoglobin$",          fluid: Blood, unit_hint: "g/dL"}
-  hematocrit:  {label_regex: "^Hematocrit$",          fluid: Blood, unit_hint: "%"}
-  wbc:         {label_regex: "^White Blood Cells$",   fluid: Blood, unit_hint: "K/uL"}
-  platelet:    {label_regex: "^Platelet Count$",      fluid: Blood, unit_hint: "K/uL"}
-  rdw:         {label_regex: "^RDW$",                 fluid: Blood, unit_hint: "%"}
-  troponin_t:  {label_regex: "^Troponin T$",          fluid: Blood, unit_hint: "ng/mL"}
-  lactate:     {label_regex: "^Lactate$",             fluid: Blood, unit_hint: "mmol/L"}
-  albumin:     {label_regex: "^Albumin$",             fluid: Blood, unit_hint: "g/dL"}
-  magnesium:   {label_regex: "^Magnesium$",           fluid: Blood, unit_hint: "mg/dL"}
-  bilirubin:   {label_regex: "^Bilirubin, Total$",    fluid: Blood, unit_hint: "mg/dL"}
-  inr:         {label_regex: "^INR\\(PT\\)$",         fluid: Blood, unit_hint: ""}
+  ntprobnp:    {itemids: [50963], label_regex: "^NTproBNP$", fluid: Blood, unit_hint: "pg/mL", valid_range: [5, 70000]}
+  creatinine:  {itemids: [50912], label_regex: "^Creatinine$", fluid: Blood, unit_hint: "mg/dL", valid_range: [0.1, 25]}
+  bun:         {itemids: [51006], label_regex: "^Urea Nitrogen$", fluid: Blood, unit_hint: "mg/dL", valid_range: [1, 300]}
+  sodium:      {itemids: [50983], label_regex: "^Sodium$", fluid: Blood, unit_hint: "mEq/L", valid_range: [95, 185]}
+  potassium:   {itemids: [50971], label_regex: "^Potassium$", fluid: Blood, unit_hint: "mEq/L", valid_range: [1.5, 10]}
+  chloride:    {itemids: [50902], label_regex: "^Chloride$", fluid: Blood, unit_hint: "mEq/L", valid_range: [60, 150]}
+  bicarbonate: {itemids: [50882], label_regex: "^Bicarbonate$", fluid: Blood, unit_hint: "mEq/L", valid_range: [3, 60]}
+  anion_gap:   {itemids: [50868], label_regex: "^Anion Gap$", fluid: Blood, unit_hint: "mEq/L", valid_range: [0, 60]}
+  glucose:     {itemids: [50931], label_regex: "^Glucose$", fluid: Blood, unit_hint: "mg/dL", valid_range: [10, 2000]}
+  hemoglobin:  {itemids: [51222], label_regex: "^Hemoglobin$", fluid: Blood, unit_hint: "g/dL", valid_range: [2, 25]}
+  hematocrit:  {itemids: [51221], label_regex: "^Hematocrit$", fluid: Blood, unit_hint: "%", valid_range: [5, 75]}
+  wbc:         {itemids: [51301], label_regex: "^White Blood Cells$", fluid: Blood, unit_hint: "K/uL", valid_range: [0.1, 300]}
+  platelet:    {itemids: [51265], label_regex: "^Platelet Count$", fluid: Blood, unit_hint: "K/uL", valid_range: [1, 2000]}
+  rdw:         {itemids: [51277], label_regex: "^RDW$", fluid: Blood, unit_hint: "%", valid_range: [5, 40]}
+  troponin_t:  {itemids: [51003], label_regex: "^Troponin T$", fluid: Blood, unit_hint: "ng/mL", valid_range: [0, 50]}
+  lactate:     {itemids: [50813], label_regex: "^Lactate$", fluid: Blood, unit_hint: "mmol/L", valid_range: [0.1, 30]}
+  albumin:     {itemids: [50862], label_regex: "^Albumin$", fluid: Blood, unit_hint: "g/dL", valid_range: [0.5, 7]}
+  magnesium:   {itemids: [50960], label_regex: "^Magnesium$", fluid: Blood, unit_hint: "mg/dL", valid_range: [0.3, 10]}
+  bilirubin:   {itemids: [50885], label_regex: "^Bilirubin, Total$", fluid: Blood, unit_hint: "mg/dL", valid_range: [0.05, 60]}
+  inr:         {itemids: [51237], label_regex: "^INR\\(PT\\)$", fluid: Blood, unit_hint: "", valid_range: [0.5, 20]}
 
 vitals:  # nguồn: icu/chartevents + icu/d_items (CHỈ có cho ca nằm ICU)
-  heart_rate:  {label_regex: "^Heart Rate$"}
-  sbp:         {label_regex: "^(Non Invasive Blood Pressure systolic|Arterial Blood Pressure systolic)$"}
-  dbp:         {label_regex: "^(Non Invasive Blood Pressure diastolic|Arterial Blood Pressure diastolic)$"}
-  mbp:         {label_regex: "^(Non Invasive Blood Pressure mean|Arterial Blood Pressure mean)$"}
-  resp_rate:   {label_regex: "^Respiratory Rate$"}
-  spo2:        {label_regex: "^O2 saturation pulseoxymetry$"}
-  temperature: {label_regex: "^Temperature (Fahrenheit|Celsius)$"}
+  heart_rate:  {itemids: [220045], label_regex: "^Heart Rate$", unit_hint: bpm, valid_range: [20, 250], feature_columns: [hr_mean, hr_max]}
+  sbp:         {itemids: [220179], label_regex: "^(Non Invasive Blood Pressure systolic|Arterial Blood Pressure systolic)$", unit_hint: mmHg, valid_range: [40, 300], feature_columns: [sbp_min, sbp_mean]}
+  dbp:         {itemids: [220180], label_regex: "^(Non Invasive Blood Pressure diastolic|Arterial Blood Pressure diastolic)$", unit_hint: mmHg, valid_range: [10, 200], feature_columns: [dbp_mean]}
+  mbp:         {itemids: [220181], label_regex: "^(Non Invasive Blood Pressure mean|Arterial Blood Pressure mean)$", unit_hint: mmHg, valid_range: [20, 250], feature_columns: [mbp_min]}
+  resp_rate:   {itemids: [220210], label_regex: "^Respiratory Rate$", unit_hint: insp/min, valid_range: [3, 70], feature_columns: [rr_mean, rr_max]}
+  spo2:        {itemids: [220277], label_regex: "^O2 saturation pulseoxymetry$", unit_hint: "%", valid_range: [50, 100], feature_columns: [spo2_min]}
+  temperature:
+    itemids: [223761]
+    label_regex: "^Temperature (Fahrenheit|Celsius)$"
+    unit_hint: "°F"
+    output_unit: "°C"
+    conversion: fahrenheit_to_celsius
+    valid_range: [30, 43]  # áp dụng SAU quy đổi
+    feature_columns: [temp_max_c]
 
 omr:  # nguồn: hosp/omr — sinh hiệu/nhân trắc ngoại trú & lịch sử, dùng cho phần "History"
   result_names: ["Blood Pressure", "Weight (Lbs)", "BMI (kg/m2)", "Height (Inches)", "eGFR"]
