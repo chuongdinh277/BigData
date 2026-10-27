@@ -104,9 +104,11 @@ def main():
         lineage = pd.concat([lineage, extra], ignore_index=True)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    features.to_parquet(out / "features.parquet", index=False)
-    admissions[["subject_id", "hadm_id", "admittime", "dischtime"]].to_parquet(out / "context.parquet", index=False)
-    lineage.to_parquet(out / "lineage.parquet", index=False)
+    # Spark 3.5 đọc timestamp microsecond, không đọc Parquet TIMESTAMP(NANOS).
+    options = dict(index=False, coerce_timestamps="us", allow_truncated_timestamps=True)
+    features.to_parquet(out / "features.parquet", **options)
+    admissions[["subject_id", "hadm_id", "admittime", "dischtime"]].to_parquet(out / "context.parquet", **options)
+    lineage.to_parquet(out / "lineage.parquet", **options)
     print(f"[OK] Synthetic fixture: {len(features)} dòng, {len(features.columns)} cột, {len(lineage)} provenance rows → {out}")
 
 
