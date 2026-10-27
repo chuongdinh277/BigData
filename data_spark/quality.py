@@ -195,7 +195,7 @@ def check_leakage(features: DataFrame, lineage: DataFrame | None = None, model_c
         "wrong_admission_rows": ((is_vital | is_icu) & ~F.coalesce(same_adm, F.lit(False)))
                                 | (is_lab & F.col("source_hadm_id").isNotNull() & ~same_adm),
         "outside_window_rows": (is_lab & (ct < a - F.expr("INTERVAL 6 HOURS")))
-                               | ((is_vital | is_icu) & (ct < a))
+                               | (is_vital & (ct < a))
                                | (is_omr & ((F.to_date(ct) >= F.to_date(a)) | (F.to_date(ct) < F.date_sub(F.to_date(a), 365))))
                                | ((name == "n_prior_adm_365d") & (ct < a - F.expr("INTERVAL 365 DAYS"))),
         "invalid_history_rows": is_history & (F.col("source_hadm_id").isNull() | same_adm | (dt >= a) | (ct >= a) | (ct > dt) | (st >= a)),

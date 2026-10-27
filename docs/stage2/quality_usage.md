@@ -123,7 +123,11 @@ chuyển lại hai bảng này từ Bronze trước khi chạy quality. Reader s
 cột thiếu; không tự điền `storetime = charttime`.
 
 - Lab dùng cửa sổ đóng `[admittime − 6h, prediction_time]`.
-- Vital và ICU dùng `[admittime, prediction_time]`; không mượn lookback 6h của lab.
+- Vital dùng `[admittime, prediction_time]`; không mượn lookback 6h của lab.
+  Cờ `in_icu_24h` cho phép ICU bắt đầu trước nhập viện (stay giao với cửa sổ
+  theo feature_spec), nhưng bắt đầu sau mốc dự đoán bị chặn. Kiểm tra overlap
+  bằng `intime/outtime` thuộc bước tạo cờ; quality không xác nhận ngữ nghĩa
+  overlap chỉ từ thời gian bắt đầu trong lineage.
 - `charttime <= prediction_time` và `storetime <= prediction_time`. Kết quả
   trả muộn, timestamp thiếu hoặc `storetime < charttime` đều bị báo lỗi.
 - Tiền sử phải thuộc admission khác và đã xuất viện **trước** admission hiện

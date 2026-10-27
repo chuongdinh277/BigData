@@ -90,6 +90,13 @@ def test_vitals_do_not_use_lab_lookback(spark, hours, expected):
     assert check_leakage(features(spark, "hr_mean", 80), trace)["status"] == expected
 
 
+@pytest.mark.parametrize("hours,expected", [(-1, "PASSED"), (25, "FAILED")])
+def test_icu_presence_can_start_before_admission_but_not_after_prediction(spark, hours, expected):
+    trace = lineage(spark, feature_name="in_icu_24h", source_table="icustays",
+                    source_charttime=ADMIT + timedelta(hours=hours), source_storetime=None)
+    assert check_leakage(features(spark, "in_icu_24h", 1), trace)["status"] == expected
+
+
 @pytest.mark.parametrize("days,expected", [(-366, "FAILED"), (-365, "PASSED"), (-1, "PASSED"), (0, "FAILED")])
 def test_omr_uses_previous_dates_within_one_year(spark, days, expected):
     trace = lineage(spark, feature_name="omr_bmi_last", source_table="omr", source_hadm_id=None,
