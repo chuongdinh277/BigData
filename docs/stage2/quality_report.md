@@ -4,9 +4,9 @@ Ngày: 27/10/2026 · Nhánh: `chien/quality`
 
 **Phạm vi: synthetic. Dữ liệu MIMIC thật và ghi S3 chưa chạy.**
 
-Nguồn kiểm chứng: GitHub Actions, commit `1795c3d5bba84d16ce2aa421b70150b67a862140`; Python 3.11.17, Spark 3.5.3.
+Nguồn kiểm chứng: GitHub Actions, commit `baf5f5cdb47dbff0ed532950cc354918e8d3d9d4`; Python 3.11.17, Spark 3.5.3.
 
-Bằng chứng thực thi: [CI thành công](https://github.com/chuongdinh277/BigData/actions/runs/40448883500); artifact `quality-evidence` chứa JSON và kết quả pytest.
+Bằng chứng thực thi: [CI thành công](https://github.com/chuongdinh277/BigData/actions/runs/40449691523); artifact `quality-evidence` chứa JSON và kết quả pytest.
 
 ## Kết quả thực thi
 
@@ -20,7 +20,7 @@ Bằng chứng thực thi: [CI thành công](https://github.com/chuongdinh277/Bi
 | Giá trị ngoài khoảng ở fixture sạch | 0 |
 | Thời gian và leakage fixture sạch | PASSED / PASSED |
 | Fixture cố tình sai | FAILED; CLI trả exit code 1 đúng dự kiến |
-| Pytest | 48 tests; 0 failures, 0 errors, 0 skipped |
+| Pytest | 50 tests; 0 failures, 0 errors, 0 skipped |
 
 ## Các lỗi cố tình đưa vào và đã phát hiện
 
