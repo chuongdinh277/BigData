@@ -148,6 +148,16 @@ chất lượng của một fixture không chứng minh toàn bộ dataset thậ
 
 ## 5. Fixture chạy thử và ca cố tình sai
 
+Sau khi cài môi trường ở mục 1, có thể chạy lại toàn bộ khảo sát, kiểm tra đơn
+vị, mẫu sạch và mẫu lỗi bằng một lệnh (CI dùng đúng lệnh này):
+
+```bash
+python tools/verify_quality_demo.py
+```
+
+Lệnh này tạo lại dữ liệu giả seed 42 và ghi kết quả vào `reports/quality/`.
+Nếu muốn chạy từng bước để tìm lỗi:
+
 ```bash
 python tools/make_quality_fixture.py
 python -m data_spark.quality --table sample_data/quality_fixture/features.parquet \
