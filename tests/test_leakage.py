@@ -13,7 +13,7 @@ LINEAGE_SCHEMA = ("subject_id long, hadm_id long, feature_name string, source_ta
 
 
 def features(spark, feature="sodium_first", value=138.0):
-    return spark.createDataFrame([(1, 10, ADMIT, PREDICT, value)],
+    return spark.createDataFrame([(1, 10, ADMIT, PREDICT, float(value) if value is not None else None)],
                                  f"subject_id long, hadm_id long, admittime timestamp, prediction_time timestamp, {feature} double")
 
 
