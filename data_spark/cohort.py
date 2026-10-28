@@ -1,21 +1,3 @@
-"""Giai đoạn 2 - Lọc cohort suy tim (phương án A: mã HF ở bất kỳ seq_num).
-
-Các bước (mỗi bước đều đếm số bệnh nhân / số lần nhập viện để làm bảng attrition):
-    S0  Toàn bộ admissions
-    S1  Có mã suy tim trong diagnoses_icd (theo configs/hf_codes.yaml)
-    S2  Có admittime, dischtime và dischtime > admittime
-    S3  Có hồ sơ patients và tuổi tại nhập viện >= 18
-
-Đầu ra:
-    - Parquet: <out>  (mỗi dòng = 1 lần nhập viện)
-    - Markdown: docs/stage2/cohort_result.md  (bảng đếm qua từng bước)
-
-Chạy thử trên dữ liệu giả (laptop), đọc thẳng từ CSV giả:
-    python -m data_spark.cohort --fmt bronze --root sample_data/mimic_fake --out sample_data/cohort_fake
-
-Chạy thật trên EC2 (đọc silver Parquet trên S3, ghi lên S3):
-    python -m data_spark.cohort
-"""
 from __future__ import annotations
 
 import argparse
@@ -28,7 +10,6 @@ from pyspark.sql import functions as F
 from data_spark.common.io import REPO_ROOT, icd_prefix_condition, load_yaml, read_table
 from data_spark.common.session import get_spark
 
-# Cột đầu ra, đúng theo phân công GĐ2
 COHORT_COLS = [
     "subject_id", "hadm_id",
     "admittime", "dischtime", "deathtime", "hospital_expire_flag",
@@ -39,7 +20,6 @@ COHORT_COLS = [
 
 
 def count_step(df: DataFrame) -> tuple[int, int]:
-    """Trả về (số bệnh nhân, số lần nhập viện)."""
     r = df.agg(
         F.countDistinct("subject_id").alias("n_pat"),
         F.countDistinct("hadm_id").alias("n_adm"),
@@ -48,7 +28,6 @@ def count_step(df: DataFrame) -> tuple[int, int]:
 
 
 def build_cohort(adm: DataFrame, pat: DataFrame, dx: DataFrame, hf_codes: dict):
-    """Trả về (cohort_df, danh sách các bước attrition)."""
     steps: list[dict] = []
 
     def record(step: str, desc: str, df: DataFrame) -> None:
@@ -56,12 +35,10 @@ def build_cohort(adm: DataFrame, pat: DataFrame, dx: DataFrame, hf_codes: dict):
         steps.append({"step": step, "desc": desc, "patients": n_pat, "admissions": n_adm})
         print(f"[{step}] {desc:<60s} bệnh nhân={n_pat:>9,d}  nhập viện={n_adm:>9,d}")
 
-    # S0: toàn bộ admissions
     s0 = adm
     record("S0", "Toàn bộ admissions", s0)
 
-    # S1: có mã suy tim. Gộp về 1 dòng / hadm_id để không nhân đôi admission.
-    # hf_primary = 1 nếu có mã HF ở seq_num = 1 (chẩn đoán chính), ngược lại 0.
+
     hf = (
         dx.filter(icd_prefix_condition(F.col("icd_code"), F.col("icd_version"), hf_codes))
         .groupBy("hadm_id")
@@ -70,7 +47,6 @@ def build_cohort(adm: DataFrame, pat: DataFrame, dx: DataFrame, hf_codes: dict):
     s1 = s0.join(hf, on="hadm_id", how="inner")
     record("S1", "Có mã suy tim (HF) ở bất kỳ seq_num", s1)
 
-    # S2: thời gian hợp lệ
     s2 = s1.filter(
         F.col("admittime").isNotNull()
         & F.col("dischtime").isNotNull()
@@ -78,7 +54,6 @@ def build_cohort(adm: DataFrame, pat: DataFrame, dx: DataFrame, hf_codes: dict):
     )
     record("S2", "Có admittime/dischtime và dischtime > admittime", s2)
 
-    # S3: ghép patients, tính tuổi tại nhập viện, giữ >= 18
     pat_cols = pat.select("subject_id", "gender", "anchor_age", "anchor_year", "anchor_year_group")
     s3 = (
         s2.join(pat_cols, on="subject_id", how="inner")
@@ -154,7 +129,7 @@ def main() -> None:
     cohort, steps = build_cohort(adm, pat, dx, hf_codes)
     cohort = cohort.cache()
 
-    # Kiểm tra: mỗi hadm_id đúng 1 dòng
+    
     n_rows = cohort.count()
     n_hadm = cohort.select("hadm_id").distinct().count()
     assert n_rows == n_hadm, f"hadm_id bị trùng: {n_rows} dòng nhưng {n_hadm} hadm_id"
