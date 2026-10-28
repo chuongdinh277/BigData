@@ -116,7 +116,7 @@ def main() -> None:
     args = ap.parse_args()
 
     root = args.root or cfg["paths"][args.fmt]
-    processed = cfg["paths"].get("processed", "s3://heartguard-mimic-group11/processed")
+    processed = cfg["paths"].get("processed", "s3a://heartguard-mimic-group11/processed")
     out = args.out or f"{processed.rstrip('/')}/cohort"
 
     t0 = time.time()
