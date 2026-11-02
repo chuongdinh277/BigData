@@ -1,48 +1,30 @@
-# Đo tốc độ Spark – pandas (Giai đoạn 2)
+### Kết quả và đánh giá Performance Benchmark
 
-> Nhánh : khoe/features · Mã: `data_spark/benchmark.py` · **Các ô "…" điền sau khi chạy trên dữ liệu thật.**
+Thực nghiệm đánh giá hiệu năng của Apache Spark và pandas trên tác vụ tổng hợp 20 loại xét nghiệm trong cửa sổ từ 6 giờ trước đến 24 giờ sau nhập viện. Các phép tổng hợp gồm giá trị đầu tiên (`first`), nhỏ nhất (`min`) và lớn nhất (`max`) theo từng cặp `(hadm_id, lab)`.
 
-## 1. Tác vụ đo
+Thử nghiệm sử dụng ba tỷ lệ lấy mẫu bệnh nhân (1%, 5%, 10%) và bốn cấu hình thực thi: pandas, Spark `local[1]`, `local[2]`, `local[3]`. Mỗi cấu hình được chạy ba lần và báo cáo thời gian trung bình cùng độ lệch chuẩn.
 
-Tổng hợp xét nghiệm 24h: với mỗi `hadm_id` và mỗi trong 20 lab, lấy `first`/`min`/`max` của `valuenum` trong cửa sổ `[admittime − 6h, admittime + 24h]`, có điều kiện `storetime ≤ admittime + 24h`. Hai engine thực hiện **đúng cùng phép tính**, không gồm bước kiểm đơn vị và khoảng hợp lệ. Kết quả đã đối chiếu số dòng đầu ra giữa hai engine (bắt buộc bằng nhau).
+| Cấu hình       |      Mẫu 1% |      Mẫu 5% |     Mẫu 10% |
+| -------------- | ----------: | ----------: | ----------: |
+| pandas         |  4,6 ± 0,1s |  4,8 ± 0,1s |  5,4 ± 0,4s |
+| Spark local[1] | 85,7 ± 2,7s | 77,6 ± 5,2s | 77,1 ± 3,9s |
+| Spark local[2] | 45,5 ± 3,2s | 41,1 ± 3,3s | 41,1 ± 2,3s |
+| Spark local[3] | 31,4 ± 3,4s | 30,6 ± 2,5s | 29,3 ± 2,3s |
 
-| Yếu tố    | Cách thực hiện                                                                                                           |
-| --------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Mẫu       | `subject_id % 10000 < tỷ lệ × 10000` (1%, 5%, 10% bệnh nhân), cùng mẫu cho mọi cấu hình                                  |
-| Spark     | 1, 2, 3 worker (`--master local[k]` hoặc cụm standalone); đọc Parquet trên S3                                            |
-| pandas    | pyarrow đọc có lọc `itemid` và `subject_id`, sau đó xử lý bằng pandas trong bộ nhớ                                       |
-| Số lần    | 3 lần mỗi cấu hình; ghi từng lần, báo cáo trung bình và độ lệch chuẩn                                                    |
-| Thời gian | Từ lúc đọc đến khi có kết quả cuối (gồm I/O). Spark chạy lazy nên ép bằng `count()`; thời gian khởi động Spark ghi riêng |
+**Nhận xét**
 
-## 2. Môi trường
+- pandas đạt thời gian thấp nhất ở cả ba mức lấy mẫu, cho thấy lợi thế của việc xử lý dữ liệu vừa bộ nhớ và chi phí thực thi thấp.
+- Apache Spark có khả năng tận dụng thực thi song song. Với mẫu 10%, cấu hình `local[3]` đạt mức tăng tốc khoảng 2,63 lần so với `local[1]`.
+- Thời gian Spark không tăng tương ứng với tỷ lệ lấy mẫu. Điều này cho thấy cần phân tích thêm chi phí đọc dữ liệu, lập kế hoạch và thực thi để xác định nút thắt hiệu năng.
 
-| Mục                                       | Giá trị                           |
-| ----------------------------------------- | --------------------------------- |
-| Máy                                       | … (vd m5.2xlarge: 8 vCPU, 32 GiB) |
-| Spark / Python / pandas / pyarrow         | …                                 |
-| Cách chạy worker                          | … (local[k] hay cụm standalone)   |
-| Số bệnh nhân / dòng `labevents` thuộc mẫu | …                                 |
+**Giới hạn thực nghiệm**
 
-## 3. Kết quả
+Các cấu hình Spark chạy ở local mode trên một máy EC2, không phải cụm Spark phân tán với nhiều worker độc lập. Spark và pandas sử dụng phương pháp đọc, lọc dữ liệu khác nhau nên kết quả phản ánh hiệu năng của pipeline hoàn chỉnh, không phải so sánh thuần túy tốc độ tính toán. Thời gian khởi động Spark được ghi nhận riêng và không nằm trong thời gian xử lý báo cáo.
 
-| Cấu hình |           Mẫu | Lần 1 (s) | Lần 2 (s) | Lần 3 (s) | Trung bình (s) | Độ lệch chuẩn (s) |
-| -------- | ------------: | --------: | --------: | --------: | -------------: | ----------------: |
-| pandas   |            1% |         … |         … |         … |              … |                 … |
-| pandas   |            5% |         … |         … |         … |              … |                 … |
-| pandas   |           10% |         … |         … |         … |              … |                 … |
-| spark-1w |            1% |         … |         … |         … |              … |                 … |
-| spark-1w |            5% |         … |         … |         … |              … |                 … |
-| spark-1w |           10% |         … |         … |         … |              … |                 … |
-| spark-2w | 1% / 5% / 10% |         … |         … |         … |              … |                 … |
-| spark-3w | 1% / 5% / 10% |         … |         … |         … |              … |                 … |
+**Kết luận**
 
-Thời gian khởi động Spark: … giây.
+Trong phạm vi dữ liệu và tác vụ được khảo sát, pandas có hiệu năng tốt hơn. Tuy nhiên, Spark cho thấy khả năng tăng tốc khi tăng mức song song. Kết quả không đủ cơ sở kết luận hiệu năng của hai công nghệ trên dữ liệu vượt bộ nhớ hoặc trong môi trường cluster phân tán.
 
-![Biểu đồ thời gian chạy](../../reports/benchmark/bench.png)
+### Biểu đồ so sánh hiệu năng
 
-## 4. Nhận xét (viết sau khi có số)
-
-- Với mẫu nhỏ, Spark có thể chậm hơn pandas vì chi phí khởi động và điều phối; ghi rõ điểm giao nhau (nếu có).
-- Mức tăng tốc khi thêm worker: … (so với 1 worker; có đạt tuyến tính không và vì sao).
-- Pandas có chạy nổi với toàn bộ dữ liệu không (giới hạn bộ nhớ), còn Spark thì sao: …
-- Giới hạn của phép đo: chỉ một tác vụ, một máy, mẫu theo `subject_id`; kết quả không suy rộng cho mọi thao tác.
+![Spark vs pandas Benchmark](../../reports/benchmark/bench_final.png)
