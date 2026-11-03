@@ -92,13 +92,10 @@ def test_validate_on_synthetic_gold(spark, tmp_path):
     gold_path = str(tmp_path / "gold_p1")
     gold.write.mode("overwrite").parquet(gold_path)
 
-    cohort = pdf[["subject_id", "hadm_id", "admittime"]].copy()
-    cohort["dischtime"] = cohort["admittime"] + pd.Timedelta(days=5)
-    cohort["deathtime"] = pd.NaT
     cohort_path = str(tmp_path / "cohort")
-    spark.createDataFrame(cohort.astype({"deathtime": "datetime64[ns]"})) \
-        .selectExpr("subject_id", "hadm_id", "admittime", "dischtime",
-                    "cast(deathtime as timestamp) as deathtime") \
+    gold.selectExpr("subject_id", "hadm_id", "admittime",
+                    "admittime + INTERVAL 5 DAYS as dischtime",
+                    "cast(null as timestamp) as deathtime") \
         .write.mode("overwrite").parquet(cohort_path)
 
     schema = json.loads((REPO_ROOT / "contracts/gold_schema_p1.json").read_text(encoding="utf-8"))
