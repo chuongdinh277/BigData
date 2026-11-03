@@ -16,6 +16,8 @@ paths:
   gold: s3a://heartguard-mimic-group11/gold
   # Kết quả khảo sát Giai đoạn 1 (chỉ số liệu tổng hợp, không có dòng bệnh nhân)
   stage1_reports: s3a://heartguard-mimic-group11/reports/stage1
+  # Dữ liệu trung gian cho cohort, nhãn và feature (Giai đoạn 2)
+  processed: s3a://heartguard-mimic-group11/processed
 
 # Bảng dùng ở Giai đoạn 1–2 (module/bảng)
 tables:
