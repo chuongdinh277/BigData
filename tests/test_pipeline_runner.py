@@ -88,7 +88,9 @@ def test_validate_on_synthetic_gold(spark, tmp_path):
     pdf = pd.read_csv(gold_csv)
     for c in ("admittime", "prediction_time"):
         pdf[c] = pd.to_datetime(pdf[c])
-    gold = spark.createDataFrame(pdf)
+    from data_spark import quality
+    # Gold giả sinh ngẫu nhiên có thể vượt khoảng hợp lệ; features thật đã lọc khoảng nên làm tương tự.
+    gold = quality.null_invalid_values(spark.createDataFrame(pdf))
     gold_path = str(tmp_path / "gold_p1")
     gold.write.mode("overwrite").parquet(gold_path)
 
@@ -107,4 +109,6 @@ def test_validate_on_synthetic_gold(spark, tmp_path):
     assert summary["forbidden_present"] == [] and summary["missing_contract_cols"] == []
     assert summary["bad_prediction_time"] == 0
     assert all(c["ok"] for c in pr.cross_checks(summary, cohort_p1))
-    assert qrep["status"] in {"PASSED", "NOT_CHECKED"}
+    assert qrep["checks"]["profile"]["status"] == "PASSED", qrep["checks"]["profile"]["duplicates"]
+    assert qrep["checks"]["prediction_times"]["status"] == "PASSED", qrep["checks"]["prediction_times"]
+    assert qrep["checks"]["leakage"]["status"] == "NOT_CHECKED"  # chưa có lineage
