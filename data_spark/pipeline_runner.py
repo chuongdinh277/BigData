@@ -15,7 +15,7 @@ Ví dụ trên EC2 (dữ liệu thật, cohort đã có sẵn trên S3):
     python -m data_spark.pipeline_runner --steps features validate --version v1
 Chạy đủ, có nhãn của Hà:
     python -m data_spark.pipeline_runner --steps cohort labels features validate \
-        --labels s3a://heartguard-mimic-group11/processed/labels/p1 --label-col label
+        --labels s3a://heartguard-mimic-group11/processed/labels/p1 --label-col label_mortality
 Thử nhanh trên mẫu 1% bệnh nhân (ghi ra gold/p1/_sample_0.01, không đụng v1):
     python -m data_spark.pipeline_runner --steps features validate --sample-frac 0.01
 Chỉ in lệnh sẽ chạy, không chạy gì:
@@ -60,7 +60,7 @@ def module_exists(name: str) -> bool:
 
 
 def build_commands(steps: list[str], paths: dict, *, version: str, fmt: str = "silver",
-                   labels: str | None = None, label_col: str = "label",
+                   labels: str | None = None, label_col: str = "label_mortality",
                    sample_frac: float | None = None, skip_verify: bool = False,
                    no_storetime_filter: bool = False,
                    feature_report: str | None = None) -> list[tuple[str, list[str]]]:
@@ -236,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", default=None, help="Mặc định <gold>/p1/<version>")
     ap.add_argument("--labels", default=None,
                     help="Parquet nhãn P1 của Hà (hadm_id + --label-col). 'auto' = <processed>/labels/p1")
-    ap.add_argument("--label-col", default="label")
+    ap.add_argument("--label-col", default="label_mortality")
     ap.add_argument("--sample-frac", type=float, default=None)
     ap.add_argument("--skip-verify", action="store_true", help="truyền cho features: bỏ đối chiếu itemid")
     ap.add_argument("--no-storetime-filter", action="store_true")
