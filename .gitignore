@@ -43,3 +43,6 @@ Thumbs.db
 spark-warehouse/
 metastore_db/
 derby.log
+
+# ---- Kết quả thí nghiệm GĐ3: chỉ số tổng hợp, không chứa dữ liệu bệnh nhân ----
+!experiments/**/results*.csv
