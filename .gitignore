@@ -43,3 +43,9 @@ Thumbs.db
 spark-warehouse/
 metastore_db/
 derby.log
+
+# ---- split_manifest chứa subject_id của MIMIC: không bao giờ commit ----
+**/split_manifest*.json
+
+# ---- Kết quả thí nghiệm GĐ3: chỉ số tổng hợp, không chứa dữ liệu bệnh nhân ----
+!experiments/**/results*.csv
