@@ -1,29 +1,24 @@
-# Giai đoạn 4 – XGBoost trên Gold P1 V1
+# XGBoost – Dự đoán tử vong trong viện (Gold P1 V1)
 
-## 1. Mục tiêu
+## Tổng quan
 
-Huấn luyện và đánh giá mô hình XGBoost cho bài toán dự đoán tử vong trong viện tại thời điểm 24 giờ sau nhập viện, sử dụng Dataset V1 và chiến lược chia dữ liệu đã thống nhất của nhóm.
+Huấn luyện và đánh giá **XGBoost** cho bài toán dự đoán tử vong trong viện tại mốc **24 giờ sau nhập viện**. Các thực nghiệm sử dụng chung Gold P1 V1 và bộ chia dữ liệu đã khóa.
 
-Thực hiện ba thí nghiệm:
+## Các thực nghiệm
 
-| Case              | Cấu hình                                     | Mục đích                      |
-| ----------------- | -------------------------------------------- | ----------------------------- |
-| `S1_xgb_default`  | XGBoost mặc định                             | Thiết lập kết quả cơ sở       |
-| `S1_xgb_weighted` | `scale_pos_weight = N_negative / N_positive` | Xử lý mất cân bằng nhãn       |
-| `S1_xgb_optuna`   | Optuna TPE, 50 trials                        | Tối ưu PR-AUC trên validation |
+| Case              | Cấu hình                                        | Mục đích                                          |
+| ----------------- | ----------------------------------------------- | ------------------------------------------------- |
+| `S1_xgb_default`  | XGBoost mặc định                                | Thiết lập kết quả cơ sở                           |
+| `S1_xgb_weighted` | `scale_pos_weight = N_âm_train / N_dương_train` | Đánh giá tác động của cân bằng trọng số lớp       |
+| `S1_xgb_optuna`   | Optuna TPE, 50 trials                           | Tối ưu hyperparameter theo PR-AUC trên validation |
 
-## 2. Dữ liệu và phương pháp
+Tiền xử lý được thực hiện trong `sklearn.Pipeline` và chỉ học từ **train**. Sử dụng split theo bệnh nhân, có phân tầng nhãn, tỷ lệ **70/15/15**, seed **42**.
 
-- **Dataset:** Gold P1 V1 – MIMIC-IV 3.1.
-- **Split:** Patient-level stratified, Train/Validation/Test = 70/15/15, seed 42.
-- **Tiền xử lý:** `sklearn.Pipeline`, chỉ fit trên tập train.
-- **Huấn luyện:** Sử dụng train, đánh giá và tối ưu trên validation.
-- **Đánh giá:** Sử dụng các hàm và schema kết quả trong `experiments/common`.
-- **Ràng buộc:** Không sử dụng tập test, không chia lại dữ liệu và không thay đổi code chung.
+Không chia lại dữ liệu hoặc sử dụng tập test để huấn luyện, tối ưu hay đánh giá.
 
-## 3. Chạy thực nghiệm
+## Chạy thực nghiệm
 
-Tại thư mục gốc repository trên EC2:
+Tại thư mục gốc repository trên EC2, với môi trường Python đã cài các thư viện cần thiết (`xgboost`, `optuna`, `scikit-learn`, `pandas`, `pyarrow`, `s3fs`):
 
 ```bash
 source ~/venv-hg/bin/activate
@@ -33,19 +28,24 @@ python -m experiments.khoe.run_xgboost \
   --jobs 4
 ```
 
-**Dữ liệu đầu vào:**
+**Đường dẫn mặc định:**
 
-- Gold: `s3://heartguard-mimic-group11/gold/p1/v1/`
-- Split: `s3://heartguard-mimic-group11/splits/p1/v1/split_manifest.json`
+- Gold P1 V1: `s3://heartguard-mimic-group11/gold/p1/v1/`
+- Split manifest: `s3://heartguard-mimic-group11/splits/p1/v1/split_manifest.json`
+- Kết quả: `experiments/khoe/results.csv`
 
-## 4. Kết quả đầu ra
+Nếu cần chạy lại khi đã có file kết quả, sử dụng `--overwrite` hoặc `--out` để lưu vào đường dẫn khác.
 
-File kết quả:
+## Kết quả và kiểm tra
 
-`experiments/khoe/results.csv`
+File `experiments/khoe/results.csv` chứa **3 dòng kết quả và 15 cột** theo schema `RESULT_COLUMNS` trong `experiments/common`.
 
-File chứa đúng **3 dòng kết quả** tương ứng với ba thí nghiệm, sử dụng 15 cột theo `RESULT_COLUMNS` của nhóm.
+Các metric đánh giá trên validation gồm **PR-AUC, ROC-AUC, F1 và Brier score**.
 
-Các mô hình được đánh giá bằng PR-AUC, ROC-AUC và các chỉ số trong khung đánh giá chung. PR-AUC trên validation là tiêu chí chính để so sánh và lựa chọn cấu hình.
+Kiểm thử:
 
-Kết quả được đối chiếu với mô hình S0 (Logistic Regression): PR-AUC = 0.299, ROC-AUC = 0.833.
+```bash
+python -m pytest tests/test_xgboost.py -q
+```
+
+**Lưu ý:** Kết quả validation dùng để so sánh và lựa chọn cấu hình; không thay thế đánh giá cuối cùng trên test.
