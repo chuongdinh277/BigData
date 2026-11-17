@@ -1,0 +1,10 @@
+# Random Forest and preprocessing
+numpy>=1.26
+pandas>=2.2
+scikit-learn>=1.5
+optuna>=4.0
+
+# Read Gold Parquet and split manifest from S3
+boto3>=1.35
+pyarrow>=15
+s3fs>=2024.6
