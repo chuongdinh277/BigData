@@ -36,7 +36,6 @@ def test_labs_accept_inclusive_window_boundaries(spark, offset):
     ({"source_charttime": PREDICT + timedelta(seconds=1), "source_storetime": PREDICT + timedelta(seconds=1)}, "future_charttime_rows"),
     ({"source_storetime": PREDICT + timedelta(seconds=1)}, "late_storetime_rows"),
     ({"source_charttime": ADMIT - timedelta(hours=6, seconds=1)}, "outside_window_rows"),
-    ({"source_storetime": None}, "missing_timestamp_rows"),
     ({"source_charttime": None}, "missing_timestamp_rows"),
     ({"source_subject_id": 2}, "wrong_patient_rows"),
     ({"source_hadm_id": 11}, "wrong_admission_rows"),
@@ -47,6 +46,19 @@ def test_invalid_source_evidence_fails(spark, changes, metric):
     result = check_leakage(features(spark), lineage(spark, **changes))
     assert result["status"] == "FAILED"
     assert result[metric] == 1
+
+
+def test_null_storetime_is_accepted_when_charttime_valid(spark):
+    lab_res = check_leakage(features(spark), lineage(spark, source_storetime=None))
+    assert lab_res["status"] == "PASSED"
+    vital_res = check_leakage(
+        features(spark, "hr_mean", 80),
+        lineage(spark, feature_name="hr_mean", source_table="chartevents", source_charttime=ADMIT, source_storetime=None),
+    )
+    assert vital_res["status"] == "PASSED"
+    missing_ct = check_leakage(features(spark), lineage(spark, source_charttime=None, source_storetime=None))
+    assert missing_ct["status"] == "FAILED"
+    assert missing_ct["missing_timestamp_rows"] == 1
 
 
 @pytest.mark.parametrize("name", ["dischtime", "deathtime", "discharge_location", "hospital_expire_flag", "dod", "los", "outtime", "last_careunit", "DISCHTIME"])
@@ -119,3 +131,44 @@ def test_wrong_prediction_offset_and_duplicate_context_fail(spark):
     df = features(spark).withColumn("prediction_time", F.lit(ADMIT + timedelta(hours=23)))
     assert check_prediction_times(df, context)["wrong_prediction_offset_rows"] == 1
     assert check_prediction_times(features(spark), context.unionByName(context))["status"] == "FAILED"
+
+
+def test_build_lineage_handles_null_and_clock_skew_storetime(spark, tmp_path):
+    from data_spark import features as feat_mod
+    from data_spark.common.io import load_yaml
+    from data_spark.quality import build_lineage
+
+    root = tmp_path / "silver"
+    admit = ADMIT
+    # 1 bệnh nhân, 1 ca đủ điều kiện P1, 1 lab storetime=NULL và 1 vital storetime < charttime (đều <= prediction_time)
+    spark.createDataFrame(
+        [(1, 10, admit, admit + timedelta(days=3), None, "EW EMER.", "EMERGENCY ROOM", "HOME", "Medicare", "WHITE", admit, admit, 0)],
+        "subject_id long, hadm_id long, admittime timestamp, dischtime timestamp, deathtime timestamp, "
+        "admission_type string, admission_location string, discharge_location string, insurance string, race string, "
+        "edregtime timestamp, edouttime timestamp, hospital_expire_flag int",
+    ).write.mode("overwrite").parquet(str(root / "hosp/admissions"))
+    spark.createDataFrame([], "subject_id long, hadm_id long, seq_num int, icd_code string, icd_version int") \
+        .write.mode("overwrite").parquet(str(root / "hosp/diagnoses_icd"))
+    spark.createDataFrame([], "subject_id long, chartdate date, seq_num int, result_name string, result_value string") \
+        .write.mode("overwrite").parquet(str(root / "hosp/omr"))
+    spark.createDataFrame([], "subject_id long, hadm_id long, stay_id long, intime timestamp, outtime timestamp, first_careunit string") \
+        .write.mode("overwrite").parquet(str(root / "icu/icustays"))
+    spark.createDataFrame(
+        [(1, 10, 50983, admit + timedelta(hours=2), None, "138", 138.0, "mEq/L")],
+        "subject_id long, hadm_id long, itemid int, charttime timestamp, storetime timestamp, value string, valuenum double, valueuom string",
+    ).write.mode("overwrite").parquet(str(root / "hosp/labevents"))
+    spark.createDataFrame(
+        [(1, 10, 100, 220045, admit + timedelta(hours=4), admit + timedelta(hours=3, minutes=55), "82", 82.0, "bpm")],
+        "subject_id long, hadm_id long, stay_id long, itemid int, charttime timestamp, storetime timestamp, value string, valuenum double, valueuom string",
+    ).write.mode("overwrite").parquet(str(root / "icu/chartevents"))
+
+    items = load_yaml("configs/feature_items.yaml")
+    base = spark.createDataFrame([(1, 10, admit, PREDICT)], "subject_id long, hadm_id long, admittime timestamp, prediction_time timestamp")
+    lw = feat_mod.lab_window(spark.read.parquet(str(root / "hosp/labevents")), base, strict_store=True)
+    labs, _ = feat_mod.lab_features(lw, items["labs"])
+    vit, _, _ = feat_mod.vitals_features(spark.read.parquet(str(root / "icu/chartevents")), base, items["vitals"], strict_store=True)
+    feat_df = base.join(labs.select("hadm_id", "sodium_first"), "hadm_id", "left").join(vit.select("hadm_id", "hr_mean"), "hadm_id", "left")
+
+    lin = build_lineage(spark, feat_df, root=str(root), fmt="silver", strict_store=True)
+    res = check_leakage(feat_df, lin)
+    assert res["status"] == "PASSED", res
