@@ -1,6 +1,6 @@
 # Dataset v1 — Gold P1 (tử vong trong viện, mốc +24h)
 
-Tạo lúc: 2026-11-11T15:48:51+00:00 · Commit: `48e9e63` · Trạng thái: **PASSED**
+Tạo lúc: 2026-11-17T16:14:43+00:00 · Commit: `d4487b1` · Trạng thái: **PASSED**
 
 - Vị trí: `s3a://heartguard-mimic-group11/gold/p1/v1`
 - Nguồn nhãn: nhãn của Hà: s3a://heartguard-mimic-group11/processed/labels/p1 (cột label_mortality)
@@ -21,7 +21,7 @@ Tạo lúc: 2026-11-11T15:48:51+00:00 · Commit: `48e9e63` · Trạng thái: **P
 | rows = 73768 (kỳ vọng) | ✅ | thực tế 73768 |
 | positives = 3588 (kỳ vọng) | ✅ | thực tế 3588 |
 
-Quality (Chiến): **NOT_CHECKED** — chưa có lineage của features nên phần leakage theo nguồn chưa kiểm được
+Quality (Chiến): **PASSED** — đã kiểm tra provenance và temporal leakage từ bảng nguồn
 
 ## Theo anchor_year_group (cho drift)
 
@@ -37,6 +37,6 @@ Quality (Chiến): **NOT_CHECKED** — chưa có lineage của features nên ph�
 
 | Bước | Trạng thái | Giây |
 |---|---|---:|
-| validate | OK | 27.9 |
+| validate | OK | 323.3 |
 
 Chỉ chứa số liệu tổng hợp; ô < 10 đã được che.
