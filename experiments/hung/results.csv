@@ -1,0 +1,4 @@
+case_id,member,strategy,model,params,data_version,split_seed,roc_auc,pr_auc,positive_rate,f1,threshold,brier,seconds,note
+S0_lr_default,hung,S0,LogisticRegression,"{""imputer"": ""median"", ""max_iter"": 2000, ""scaler"": ""standard""}",v1,42,0.83315,0.29874,0.04834,0.34245,0.17661,0.03959,2.03871,"mặc định của khung chung, đánh giá trên validation"
+S1_lr_balanced,hung,S1,LogisticRegression,"{""class_weight"": ""balanced"", ""imputer"": ""median"", ""max_iter"": 2000, ""scaler"": ""standard""}",v1,42,0.83264,0.28742,0.04834,0.33997,0.81137,0.15779,3.76755,"class_weight=balanced, đánh giá trên validation"
+S2_lr_optuna50,hung,S2,LogisticRegression,"{""C"": 0.1428227904897663, ""class_weight"": null, ""max_iter"": 2000, ""n_trials"": 50, ""penalty"": ""l1"", ""solver"": ""liblinear""}",v1,42,0.83439,0.30187,0.04834,0.34483,0.14225,0.03945,13.26425,"Optuna 50 lượt (TPE, seed 42), chọn theo PR-AUC validation"
