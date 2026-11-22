@@ -1,0 +1,4 @@
+case_id,member,strategy,model,params,data_version,split_seed,roc_auc,pr_auc,positive_rate,f1,threshold,brier,seconds,note
+S1_rf_default,Ha,S1,RandomForest,"{""n_jobs"": 4, ""random_state"": 42}",v1,42,0.81732,0.28338,0.04834,0.34046,0.21,0.04009,7.30932,Random Forest defaults; validation only
+S1_rf_weighted,Ha,S1,RandomForest,"{""class_weight"": ""balanced"", ""n_jobs"": 4, ""random_state"": 42}",v1,42,0.82688,0.24881,0.04834,0.31486,0.33,0.04475,4.16299,class_weight=balanced; validation only
+S1_rf_optuna,Ha,S1,RandomForest,"{""bootstrap"": false, ""class_weight"": null, ""max_depth"": 20, ""max_features"": ""sqrt"", ""min_samples_leaf"": 6, ""min_samples_split"": 2, ""n_estimators"": 450, ""n_jobs"": 4, ""random_state"": 42}",v1,42,0.83533,0.30441,0.04834,0.35661,0.17448,0.03937,1142.79933,Optuna TPE 50 trials; best validation PR-AUC=0.30441; tuning=1111.9s
