@@ -112,3 +112,46 @@ def test_validate_on_synthetic_gold(spark, tmp_path):
     assert qrep["checks"]["profile"]["status"] == "PASSED", qrep["checks"]["profile"]["duplicates"]
     assert qrep["checks"]["prediction_times"]["status"] == "PASSED", qrep["checks"]["prediction_times"]
     assert qrep["checks"]["leakage"]["status"] == "NOT_CHECKED"  # chưa có lineage
+
+
+def test_build_lineage_and_validate_on_synthetic_mimic(spark, tmp_path):
+    from pyspark.sql import functions as F
+    from data_spark import cohort as cohort_mod
+    from data_spark import features as feat_mod
+    from data_spark.common.io import read_table
+
+    mimic_dir = tmp_path / "mimic_fake"
+    subprocess.run([sys.executable, str(REPO_ROOT / "tools/make_synthetic_mimic.py"),
+                    "--patients", "60", "--seed", "7", "--out", str(mimic_dir)], check=True)
+
+    rt = lambda name: read_table(spark, str(mimic_dir), name, "bronze")
+    hfc = load_yaml("configs/hf_codes.yaml")
+    items = load_yaml("configs/feature_items.yaml")
+    schema = json.loads((REPO_ROOT / "contracts/gold_schema_p1.json").read_text(encoding="utf-8"))
+
+    cohort_df, _ = cohort_mod.build_cohort(rt("admissions"), rt("patients"), rt("diagnoses_icd"), hfc["heart_failure"])
+    cohort_path = str(tmp_path / "cohort")
+    cohort_df.write.mode("overwrite").parquet(cohort_path)
+
+    cohort_read = spark.read.parquet(cohort_path)
+    base = feat_mod.build_base(cohort_read).cache()
+    dx = rt("diagnoses_icd")
+    demo = feat_mod.demographics(base, rt("icustays"), dx)
+    hist = feat_mod.history(base, rt("admissions"), dx, hfc["heart_failure"], hfc["comorbidities"])
+    omr = feat_mod.omr_features(base, rt("omr"))
+    lw = feat_mod.lab_window(rt("labevents"), base, strict_store=True).cache()
+    nlab = lw.groupBy("hadm_id").agg(F.count(F.lit(1)).alias("n_lab_tests_24h"))
+    labs, _ = feat_mod.lab_features(lw, items["labs"], items["selection"].get("minimum_unit_share", 0.95))
+    vit, vit_cols, _ = feat_mod.vitals_features(rt("chartevents"), base, items["vitals"], strict_store=True)
+    gold_df = feat_mod.assemble(base, demo, hist, omr, labs, nlab, vit, vit_cols, schema, list(items["labs"]))
+
+    gold_path = str(tmp_path / "gold_p1")
+    gold_df.write.mode("overwrite").parquet(gold_path)
+
+    paths = {"gold_p1": gold_path, "cohort": cohort_path, "source_root": str(mimic_dir)}
+    summary, cohort_p1, qrep = pr.validate(spark, paths, schema, 24, fmt="bronze")
+
+    assert summary["rows"] == cohort_p1 and summary["rows"] > 0
+    assert qrep["status"] == "PASSED", qrep
+    assert qrep["checks"]["leakage"]["status"] == "PASSED", qrep["checks"]["leakage"]
+    assert qrep["checks"]["leakage"]["uncovered_feature_values"] == 0

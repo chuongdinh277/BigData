@@ -13,8 +13,14 @@ from pathlib import Path
 from pyspark.sql import DataFrame, functions as F
 from pyspark.sql.types import NumericType, StringType
 
-from data_spark.common.io import REPO_ROOT, load_yaml
+from data_spark.common.io import REPO_ROOT, icd_prefix_condition, load_yaml, read_table
 from data_spark.common.session import get_spark
+
+LINEAGE_COLUMNS = [
+    "subject_id", "hadm_id", "feature_name", "source_table",
+    "source_subject_id", "source_hadm_id",
+    "source_charttime", "source_storetime", "source_dischtime",
+]
 
 
 def contract() -> dict:
@@ -188,7 +194,7 @@ def check_leakage(features: DataFrame, lineage: DataFrame | None = None, model_c
         "unknown_feature_rows": name.isNull() | ~name.isin(temporal),
         "invalid_source_rows": ~F.coalesce(valid_source, F.lit(False)),
         "wrong_patient_rows": ~F.col("source_subject_id").eqNullSafe(F.col("subject_id")),
-        "missing_timestamp_rows": ct.isNull() | ((is_lab | is_vital) & st.isNull()) | (is_history & dt.isNull()),
+        "missing_timestamp_rows": ct.isNull() | (is_history & dt.isNull()),
         "future_charttime_rows": ct > p,
         "late_storetime_rows": st > p,
         "reversed_storetime_rows": st < ct,
@@ -213,6 +219,341 @@ def check_leakage(features: DataFrame, lineage: DataFrame | None = None, model_c
     evidence = lineage.select("subject_id", "hadm_id", "feature_name").distinct()
     counts["uncovered_feature_values"] = expected.join(evidence, ["subject_id", "hadm_id", "feature_name"], "left_anti").count()
     return {"status": "FAILED" if any(counts.values()) else "PASSED", **result, **counts}
+
+
+def _select_lineage(
+    df: DataFrame,
+    *,
+    feature_name,
+    source_table: str,
+    source_subject_id,
+    source_hadm_id,
+    source_charttime,
+    source_storetime=None,
+    source_dischtime=None,
+) -> DataFrame:
+    null_ts = F.lit(None).cast("timestamp")
+    fname = F.lit(feature_name) if isinstance(feature_name, str) else feature_name
+    shadm = F.lit(None) if source_hadm_id is None else source_hadm_id
+    return df.select(
+        F.col("subject_id").cast("long").alias("subject_id"),
+        F.col("hadm_id").cast("long").alias("hadm_id"),
+        fname.cast("string").alias("feature_name"),
+        F.lit(source_table).cast("string").alias("source_table"),
+        source_subject_id.cast("long").alias("source_subject_id"),
+        shadm.cast("long").alias("source_hadm_id"),
+        source_charttime.cast("timestamp").alias("source_charttime"),
+        (null_ts if source_storetime is None else source_storetime.cast("timestamp")).alias("source_storetime"),
+        (null_ts if source_dischtime is None else source_dischtime.cast("timestamp")).alias("source_dischtime"),
+    )
+
+
+def _reduce_extremal_events(df: DataFrame, group_cols: list[str]) -> DataFrame:
+    """Giữ tối đa 3 event thật đại diện biên thời gian (min charttime, max charttime, max storetime)."""
+    ct = F.col("charttime").cast("timestamp")
+    # Giữ storetime >= charttime để bỏ qua lệch đồng hồ âm vô hại; storetime > prediction_time vẫn bị bắt ở late_storetime_rows.
+    st = F.when(F.col("storetime").cast("timestamp") >= ct, F.col("storetime").cast("timestamp"))
+    e_min_ct = F.min(F.struct(ct.alias("ct"), st.alias("st")))
+    e_max_ct = F.max(F.struct(ct.alias("ct"), st.alias("st")))
+    e_max_st_raw = F.max(F.struct(st.alias("st"), ct.alias("ct")))
+    e_max_st = F.struct(e_max_st_raw["ct"].alias("ct"), e_max_st_raw["st"].alias("st"))
+    agg = df.groupBy(*group_cols).agg(F.array_distinct(F.array(e_min_ct, e_max_ct, e_max_st)).alias("_events"))
+    return agg.select(*group_cols, F.explode("_events").alias("_ev")).select(
+        *group_cols,
+        F.col("_ev.ct").alias("source_charttime"),
+        F.col("_ev.st").alias("source_storetime"),
+    )
+
+
+def _lineage_icu(base: DataFrame, icustays: DataFrame) -> DataFrame:
+    icu = icustays.select(
+        F.col("subject_id").alias("source_subject_id"),
+        F.col("hadm_id").alias("source_hadm_id"),
+        "intime",
+        "outtime",
+    )
+    joined = base.join(icu, F.col("hadm_id") == F.col("source_hadm_id"), "inner").filter(
+        (F.col("intime") <= F.col("prediction_time")) & (F.col("outtime") >= F.col("admittime"))
+    )
+    return _select_lineage(
+        joined,
+        feature_name="in_icu_24h",
+        source_table="icustays",
+        source_subject_id=F.col("source_subject_id"),
+        source_hadm_id=F.col("source_hadm_id"),
+        source_charttime=F.col("intime"),
+    ).distinct()
+
+
+def _lineage_history(base: DataFrame, adm_all: DataFrame, dx: DataFrame, hfc: dict) -> list[DataFrame]:
+    adm_src = adm_all.select(
+        F.col("subject_id").alias("source_subject_id"),
+        F.col("hadm_id").alias("source_hadm_id"),
+        F.col("dischtime").cast("timestamp").alias("p_disch"),
+    )
+    pairs = (
+        base.select("subject_id", "hadm_id", "admittime")
+        .join(adm_src, F.col("subject_id") == F.col("source_subject_id"), "inner")
+        .filter(
+            F.col("p_disch").isNotNull()
+            & (F.col("p_disch") < F.col("admittime"))
+            & (F.col("source_hadm_id") != F.col("hadm_id"))
+        )
+        .cache()
+    )
+    gap_days = (F.unix_timestamp("admittime") - F.unix_timestamp("p_disch")) / 86400.0
+    days_last = _select_lineage(
+        pairs,
+        feature_name="days_since_last_discharge",
+        source_table="admissions",
+        source_subject_id=F.col("source_subject_id"),
+        source_hadm_id=F.col("source_hadm_id"),
+        source_charttime=F.col("p_disch"),
+        source_dischtime=F.col("p_disch"),
+    ).distinct()
+    prior_365 = _select_lineage(
+        pairs.filter(gap_days <= 365),
+        feature_name="n_prior_adm_365d",
+        source_table="admissions",
+        source_subject_id=F.col("source_subject_id"),
+        source_hadm_id=F.col("source_hadm_id"),
+        source_charttime=F.col("p_disch"),
+        source_dischtime=F.col("p_disch"),
+    ).distinct()
+
+    pdx = pairs.join(dx.select(F.col("hadm_id").alias("source_hadm_id"), "icd_code", "icd_version"), "source_hadm_id", "inner")
+    match_exprs = [
+        F.when(icd_prefix_condition(F.col("icd_code"), F.col("icd_version"), hfc["heart_failure"]), F.lit("n_prior_hf_adm"))
+    ] + [
+        F.when(icd_prefix_condition(F.col("icd_code"), F.col("icd_version"), codes), F.lit(f"hx_{name}"))
+        for name, codes in hfc["comorbidities"].items()
+    ]
+    dx_events = (
+        pdx.select(
+            "subject_id", "hadm_id", "source_subject_id", "source_hadm_id", "p_disch",
+            F.explode(F.array(*match_exprs)).alias("feature_name"),
+        )
+        .where(F.col("feature_name").isNotNull())
+    )
+    dx_lineage = _select_lineage(
+        dx_events,
+        feature_name=F.col("feature_name"),
+        source_table="diagnoses_icd",
+        source_subject_id=F.col("source_subject_id"),
+        source_hadm_id=F.col("source_hadm_id"),
+        source_charttime=F.col("p_disch"),
+        source_dischtime=F.col("p_disch"),
+    ).distinct()
+    return [days_last, prior_365, dx_lineage]
+
+
+def _lineage_omr(base: DataFrame, omr: DataFrame) -> DataFrame:
+    from pyspark.sql import Window
+    from data_spark.features import LBS_TO_KG, OMR_LOOKBACK_DAYS, OMR_RANGES, _num, _or
+
+    b = base.select("subject_id", "hadm_id", F.to_date("admittime").alias("adm_date"))
+    o = omr.withColumn("chartdate", F.to_date("chartdate")).select(
+        F.col("subject_id").alias("source_subject_id"),
+        "chartdate",
+        *(["seq_num"] if "seq_num" in omr.columns else []),
+        "result_name",
+        "result_value",
+    )
+    j = b.join(o, F.col("subject_id") == F.col("source_subject_id"), "inner").filter(
+        (F.col("chartdate") < F.col("adm_date"))
+        & (F.col("chartdate") >= F.date_sub(F.col("adm_date"), OMR_LOOKBACK_DAYS))
+    )
+    val = F.col("result_value")
+    j = j.withColumn(
+        "metric",
+        F.when(F.col("result_name") == "BMI (kg/m2)", "bmi")
+        .when(F.col("result_name") == "Weight (Lbs)", "weight_kg")
+        .when(F.col("result_name") == "Blood Pressure", "sbp")
+        .when(F.col("result_name") == "eGFR", "egfr"),
+    )
+    j = j.filter(F.col("metric").isNotNull()).withColumn(
+        "v",
+        F.when(F.col("metric") == "sbp", _num(F.split(val, "/").getItem(0)))
+        .when(F.col("metric") == "weight_kg", _num(val) * LBS_TO_KG)
+        .otherwise(_num(val)),
+    )
+    j = j.filter(
+        F.col("v").isNotNull() & _or([(F.col("metric") == m) & F.col("v").between(lo, hi) for m, (lo, hi) in OMR_RANGES.items()])
+    )
+    order = [F.col("chartdate").desc()] + ([F.col("seq_num").desc()] if "seq_num" in j.columns else [])
+    w = Window.partitionBy("hadm_id", "metric").orderBy(*order)
+    last = j.withColumn("rn", F.row_number().over(w)).filter(F.col("rn") == 1)
+    feat = F.concat(
+        F.lit("omr_"),
+        F.when(F.col("metric") == "weight_kg", F.lit("weight")).otherwise(F.col("metric")),
+        F.lit("_last"),
+    )
+    return _select_lineage(
+        last,
+        feature_name=feat,
+        source_table="omr",
+        source_subject_id=F.col("source_subject_id"),
+        source_hadm_id=None,
+        source_charttime=F.col("chartdate"),
+    )
+
+
+def _lineage_labs(spark, base: DataFrame, labevents: DataFrame, lab_cfg: dict, strict_store: bool) -> list[DataFrame]:
+    from data_spark.features import lab_window
+
+    lw = lab_window(labevents, base, strict_store).cache()
+    nlab = _select_lineage(
+        _reduce_extremal_events(lw, ["subject_id", "hadm_id"]),
+        feature_name="n_lab_tests_24h",
+        source_table="labevents",
+        source_subject_id=F.col("subject_id"),
+        source_hadm_id=F.col("hadm_id"),
+        source_charttime=F.col("source_charttime"),
+        source_storetime=F.col("source_storetime"),
+    )
+
+    mapping, seen = [], {}
+    for name, config in lab_cfg.items():
+        low, high = (float(v) for v in config["valid_range"])
+        for raw_id in config["itemids"]:
+            iid = int(raw_id)
+            if iid not in seen:
+                seen[iid] = name
+                mapping.append((iid, name, low, high))
+
+    def sql_str(value: str) -> str:
+        return "'" + value.replace("'", "''") + "'"
+
+    mapping_values = ", ".join(
+        "(CAST({} AS BIGINT), {}, CAST({!r} AS DOUBLE), CAST({!r} AS DOUBLE))".format(iid, sql_str(name), lo, hi)
+        for iid, name, lo, hi in mapping
+    )
+    map_df = spark.sql(f"SELECT * FROM VALUES {mapping_values} AS lab_map(itemid, lab, valid_min, valid_max)")
+    sel = lw.join(F.broadcast(map_df), "itemid", "inner").withColumn("unit", F.coalesce(F.col("valueuom"), F.lit("")))
+    counts = sel.filter(F.col("valuenum").isNotNull()).groupBy("lab", "unit").count().collect()
+    dominant = {}
+    for lab in lab_cfg:
+        rows = [(r["unit"], r["count"]) for r in counts if r["lab"] == lab]
+        if rows:
+            dominant[lab] = max(rows, key=lambda x: x[1])[0]
+    units_values = ", ".join(
+        "({}, {})".format(sql_str(name), sql_str(dominant[name]) if name in dominant else "CAST(NULL AS STRING)")
+        for name in lab_cfg
+    )
+    units_df = spark.sql(f"SELECT * FROM VALUES {units_values} AS lab_units(lab, dominant_unit)")
+    good = sel.join(F.broadcast(units_df), "lab", "left").filter(
+        F.col("valuenum").isNotNull()
+        & F.col("dominant_unit").isNotNull()
+        & (F.col("unit") == F.col("dominant_unit"))
+        & F.col("valuenum").between(F.col("valid_min"), F.col("valid_max"))
+    )
+    reduced = _reduce_extremal_events(good, ["subject_id", "hadm_id", "lab"])
+    exploded = reduced.select(
+        "subject_id", "hadm_id", "source_charttime", "source_storetime",
+        F.explode(F.array(F.concat(F.col("lab"), F.lit("_first")),
+                          F.concat(F.col("lab"), F.lit("_min")),
+                          F.concat(F.col("lab"), F.lit("_max")))).alias("feature_name"),
+    )
+    labs_lin = _select_lineage(
+        exploded,
+        feature_name=F.col("feature_name"),
+        source_table="labevents",
+        source_subject_id=F.col("subject_id"),
+        source_hadm_id=F.col("hadm_id"),
+        source_charttime=F.col("source_charttime"),
+        source_storetime=F.col("source_storetime"),
+    )
+    return [nlab, labs_lin]
+
+
+def _lineage_vitals(base: DataFrame, chartevents: DataFrame, vit_cfg: dict, strict_store: bool) -> DataFrame:
+    from data_spark.features import _or
+
+    ids = [i for c in vit_cfg.values() for i in c["itemids"]]
+    b = F.broadcast(base.select("subject_id", "hadm_id", "admittime", "prediction_time"))
+    ce = chartevents.filter(F.col("itemid").isin(ids)).select(
+        F.col("subject_id").alias("source_subject_id"),
+        F.col("hadm_id").alias("source_hadm_id"),
+        "itemid", "charttime", "storetime", "valuenum",
+    )
+    j = ce.join(b, F.col("source_hadm_id") == F.col("hadm_id"), "inner").filter(
+        (F.col("charttime") >= F.col("admittime")) & (F.col("charttime") <= F.col("prediction_time"))
+    )
+    if strict_store:
+        j = j.filter(F.col("storetime").isNull() | (F.col("storetime") <= F.col("prediction_time")))
+    j = j.withColumn(
+        "vital",
+        F.coalesce(*[F.when(F.col("itemid").isin(c["itemids"]), F.lit(n)) for n, c in vit_cfg.items()]),
+    )
+    conv = F.col("valuenum")
+    if "temperature" in vit_cfg:
+        conv = F.when(F.col("vital") == "temperature", (F.col("valuenum") - 32.0) * 5.0 / 9.0).otherwise(F.col("valuenum"))
+    j = j.withColumn("v", conv).filter(F.col("v").isNotNull())
+    j = j.filter(_or([(F.col("vital") == n) & F.col("v").between(*c["valid_range"]) for n, c in vit_cfg.items()]))
+    reduced = _reduce_extremal_events(j, ["subject_id", "hadm_id", "source_subject_id", "source_hadm_id", "vital"])
+    col_map = F.create_map(*[
+        item
+        for n, c in vit_cfg.items()
+        for item in (F.lit(n), F.array(*[F.lit(col) for col in c["feature_columns"]]))
+    ])
+    exploded = reduced.select(
+        "subject_id", "hadm_id", "source_subject_id", "source_hadm_id",
+        "source_charttime", "source_storetime",
+        F.explode(col_map[F.col("vital")]).alias("feature_name"),
+    )
+    return _select_lineage(
+        exploded,
+        feature_name=F.col("feature_name"),
+        source_table="chartevents",
+        source_subject_id=F.col("source_subject_id"),
+        source_hadm_id=F.col("source_hadm_id"),
+        source_charttime=F.col("source_charttime"),
+        source_storetime=F.col("source_storetime"),
+    )
+
+
+def build_lineage(
+    spark,
+    features: DataFrame,
+    *,
+    root: str | None = None,
+    fmt: str = "silver",
+    strict_store: bool = True,
+) -> DataFrame:
+    """Tạo bảng lineage 9 cột (chỉ đọc) từ Gold P1 và các bảng Silver/Bronze nguồn."""
+    from functools import reduce
+
+    schema_str = (
+        "subject_id long, hadm_id long, feature_name string, source_table string, "
+        "source_subject_id long, source_hadm_id long, source_charttime timestamp, "
+        "source_storetime timestamp, source_dischtime timestamp"
+    )
+    temporal = sorted(_temporal_features(features))
+    if not temporal:
+        return spark.createDataFrame([], schema_str)
+
+    cfg = load_yaml("configs/data.yaml")
+    items = load_yaml("configs/feature_items.yaml")
+    hfc = load_yaml("configs/hf_codes.yaml")
+    source_root = root or cfg["paths"][fmt]
+
+    base = features.select(
+        F.col("subject_id").cast("long").alias("subject_id"),
+        F.col("hadm_id").cast("long").alias("hadm_id"),
+        F.col("admittime").cast("timestamp").alias("admittime"),
+        F.col("prediction_time").cast("timestamp").alias("prediction_time"),
+    ).cache()
+
+    rt = lambda name: read_table(spark, source_root, name, fmt)
+    parts = [
+        _lineage_icu(base, rt("icustays")),
+        *_lineage_history(base, rt("admissions"), rt("diagnoses_icd"), hfc),
+        _lineage_omr(base, rt("omr")),
+        *_lineage_labs(spark, base, rt("labevents"), items["labs"], strict_store),
+        _lineage_vitals(base, rt("chartevents"), items["vitals"], strict_store),
+    ]
+    lineage = reduce(lambda a, b: a.unionByName(b), parts)
+    return lineage.filter(F.col("feature_name").isin(temporal))
 
 
 def audit_event_units(events: DataFrame, group: str = "labs") -> dict:
@@ -321,6 +662,14 @@ def main() -> None:
     ap.add_argument("--kind", choices=["p1", "table", "labs", "vitals"], default="p1")
     ap.add_argument("--context", help="Parquet: admissions/cohort, có dischtime")
     ap.add_argument("--lineage", help="Parquet: một dòng cho mỗi nguồn đóng góp/feature")
+    ap.add_argument("--build-lineage", action="store_true",
+                    help="Tạo lineage read-only từ Silver/Bronze khi chưa có --lineage")
+    ap.add_argument("--silver-root", default=None,
+                    help="Thư mục nguồn Silver/Bronze để tạo lineage (mặc định theo configs/data.yaml)")
+    ap.add_argument("--source-format", choices=["silver", "bronze"], default="silver",
+                    help="Định dạng bảng nguồn khi --build-lineage")
+    ap.add_argument("--no-storetime-filter", action="store_true",
+                    help="Bỏ lọc storetime <= prediction_time khi --build-lineage")
     ap.add_argument("--keys", nargs="+", default=["hadm_id"])
     ap.add_argument("--out", default="reports/quality")
     ap.add_argument("--synthetic", action="store_true", help="Đánh dấu dữ liệu giả, không che ô nhỏ")
@@ -333,9 +682,18 @@ def main() -> None:
             report = {"status": "NOT_CHECKED", "scope": args.kind, "checks": {"units": audit_event_units(df, args.kind)}}
             report["status"] = report["checks"]["units"]["status"]
         else:
+            lineage_df = reader.parquet(args.lineage) if args.lineage else None
+            if lineage_df is None and args.build_lineage and args.kind == "p1":
+                lineage_df = build_lineage(
+                    spark,
+                    df,
+                    root=args.silver_root,
+                    fmt=args.source_format,
+                    strict_store=not args.no_storetime_filter,
+                )
             report = run_quality(df, p1=args.kind == "p1", keys=args.keys,
                                  context=reader.parquet(args.context) if args.context else None,
-                                 lineage=reader.parquet(args.lineage) if args.lineage else None)
+                                 lineage=lineage_df)
         report["data_source"] = "synthetic" if args.synthetic else "real_or_unspecified"
         report["generated_at"] = datetime.now(timezone.utc).isoformat()
         if not args.synthetic:

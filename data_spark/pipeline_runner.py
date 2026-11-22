@@ -46,9 +46,11 @@ def resolve_paths(cfg: dict, version: str, sample_frac: float | None,
     reports = p.get("reports", "s3a://heartguard-mimic-group11/reports").rstrip("/")
     gold_p1 = out or (f"{gold}/p1/_sample_{sample_frac}" if sample_frac else f"{gold}/p1/{version}")
     return {
+        "bronze": p["bronze"].rstrip("/"),
         "silver": p["silver"].rstrip("/"),
         "cohort": cohort or f"{processed}/cohort",
         "labels_default": f"{processed}/labels/p1",
+        "lineage": f"{processed}/features/p1_lineage",
         "gold_p1": gold_p1,
         "manifest": f"{gold_p1.rstrip('/')}/_manifest.json",
         "quality_out": f"{reports}/quality/gold_p1_{'sample' if sample_frac else version}",
@@ -177,7 +179,14 @@ def git_commit() -> str:
         return "unknown"
 
 
-def validate(spark, paths: dict, schema: dict, index_hours: int) -> tuple[dict, int, dict]:
+def validate(
+    spark,
+    paths: dict,
+    schema: dict,
+    index_hours: int,
+    fmt: str = "silver",
+    no_storetime_filter: bool = False,
+) -> tuple[dict, int, dict]:
     """Đọc Gold + cohort bằng Spark, trả về (summary, số ca P1 từ cohort, báo cáo quality)."""
     from pyspark.sql import functions as F
     from data_spark import quality
@@ -221,7 +230,19 @@ def validate(spark, paths: dict, schema: dict, index_hours: int) -> tuple[dict, 
     cohort_p1 = cohort.filter((F.col("admittime") < pt) & (pt < F.col("dischtime"))
                               & (F.col("deathtime").isNull() | (F.col("deathtime") > pt))).count()
 
-    qrep = quality.run_quality(gold, context=cohort, lineage=None, p1=True)
+    lineage = None
+    source_root = paths.get("source_root") or (paths.get("bronze") if fmt == "bronze" else paths.get("silver"))
+    if paths.get("lineage_input"):
+        lineage = spark.read.parquet(paths["lineage_input"])
+    elif source_root:
+        lineage = quality.build_lineage(
+            spark,
+            gold,
+            root=source_root,
+            fmt=fmt,
+            strict_store=not no_storetime_filter,
+        )
+    qrep = quality.run_quality(gold, context=cohort, lineage=lineage, p1=True)
     return summary, int(cohort_p1), qrep
 
 
@@ -278,7 +299,14 @@ def main(argv: list[str] | None = None) -> int:
     t0 = time.time()
     spark = get_spark("hg-pipeline-validate")
     try:
-        summary, cohort_p1, qrep = validate(spark, paths, schema, index_hours)
+        summary, cohort_p1, qrep = validate(
+            spark,
+            paths,
+            schema,
+            index_hours,
+            fmt=args.fmt,
+            no_storetime_filter=args.no_storetime_filter,
+        )
         checks = cross_checks(summary, cohort_p1, {"rows": args.expect_rows, "positives": args.expect_positives})
         steps_log.append({"step": "validate", "status": "OK", "seconds": round(time.time() - t0, 1)})
 
@@ -286,6 +314,8 @@ def main(argv: list[str] | None = None) -> int:
         q_note = ""
         if q_status == "NOT_CHECKED":
             q_note = "chưa có lineage của features nên phần leakage theo nguồn chưa kiểm được"
+        elif q_status == "PASSED":
+            q_note = "đã kiểm tra provenance và temporal leakage từ bảng nguồn"
         threshold = int(cfg["privacy"]["small_cell_threshold"])
         qrep["data_source"] = "real_or_unspecified"
         quality.write_report(quality.redact_counts(qrep, threshold), paths["quality_out"], spark)
