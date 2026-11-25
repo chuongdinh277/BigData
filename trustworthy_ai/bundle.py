@@ -1,7 +1,7 @@
 """Gói mô hình cuối của GĐ5 và hàm dự đoán một ca (dùng cho FastAPI ở GĐ6).
 
-Cấu trúc thư mục gói (artifacts/models/p1/<model_version>/, đồng bộ lên
-s3://heartguard-mimic-group11/model-artifacts/p1/<model_version>/):
+Cấu trúc thư mục gói (artifacts/models/<task>/<model_version>/, đồng bộ lên
+s3://heartguard-mimic-group11/model-artifacts/<task>/<model_version>/), task = p1 | p2 | p3:
 
     model.joblib            pipeline sklearn (tiền xử lý + mô hình) fit trên train+validation
     calibrator.joblib       bộ hiệu chỉnh học từ dự đoán out-of-fold
@@ -34,7 +34,7 @@ from .drift import DriftReference
 from .explain import Explainer
 from .review import flag_cases
 
-LABS_KEYS = ("_first", "_min", "_max")
+LABS_KEYS = ("_first", "_min", "_max", "_last")
 
 
 def _sha256(path: Path) -> str:
@@ -114,7 +114,7 @@ class HeartGuardModel:
 
     @classmethod
     def from_s3(cls, s3_uri: str, cache_dir: str | Path = "artifacts/models/cache", verify: bool = True):
-        """Tải gói từ s3://.../model-artifacts/p1/<version>/ về thư mục cache (dùng IAM Role của EC2,
+        """Tải gói từ s3://.../model-artifacts/<task>/<version>/ về thư mục cache (dùng IAM Role của EC2,
         không dùng access key trong code), kiểm SHA256 rồi nạp. Đã có trong cache thì không tải lại."""
         import boto3
         bucket, _, prefix = s3_uri.replace("s3a://", "s3://")[len("s3://"):].partition("/")

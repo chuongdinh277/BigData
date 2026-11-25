@@ -42,7 +42,7 @@ import pandas as pd
 from sklearn.base import clone
 from sklearn.model_selection import StratifiedGroupKFold
 
-from experiments.common.config import GROUP_KEY, LABEL, REPO_ROOT, SEED
+from experiments.common.config import GROUP_KEY, LABEL, REPO_ROOT, SEED, TASK
 from experiments.common.data import feature_columns, load_gold
 from experiments.common.runner import split_feature_types
 from experiments.common.split import apply_split, load_manifest
@@ -58,13 +58,19 @@ from trustworthy_ai.robustness import missing_fraction, missingness_curve, summa
 from trustworthy_ai.subgroup import add_subgroup_columns, fairness_gaps, subgroup_table
 
 LOG = logging.getLogger("heartguard.stage5")
-DEFAULT_GOLD = "s3://heartguard-mimic-group11/gold/p1/v1/"
-DEFAULT_SPLIT = "s3://heartguard-mimic-group11/splits/p1/v1/split_manifest.json"
-LOCKED_SPLIT_SHA256 = "584278c737fcbc884e88bb57ed1dc6f5f64fd0c211e645af16cd1e4532390ab5"
-S3_ARTIFACTS = "s3://heartguard-mimic-group11/model-artifacts/p1"
+# Bài toán chọn bằng HG_TASK (experiments/common/config.py); mỗi bài có Gold, split, gói mô hình riêng.
+DEFAULT_GOLD = f"s3://heartguard-mimic-group11/gold/{TASK}/v1/"
+DEFAULT_SPLIT = f"s3://heartguard-mimic-group11/splits/{TASK}/v1/split_manifest.json"
+# Split đã khóa (D-013). P2/P3 khóa khi nhóm tạo split v1 và ghi sha256 vào decision_log.
+LOCKED_SPLIT_SHA256 = {"p1": "584278c737fcbc884e88bb57ed1dc6f5f64fd0c211e645af16cd1e4532390ab5"}
+S3_ARTIFACTS = f"s3://heartguard-mimic-group11/model-artifacts/{TASK}"
+TASK_NAMES = {"p1": "P1 — tử vong trong viện (mốc +24h)",
+              "p2": "P2 — tái nhập viện 30 ngày (mốc xuất viện)",
+              "p3": "P3 — tử vong 90 ngày sau xuất viện (mốc xuất viện)"}
 
 RESULTS = {"XGBoost": "experiments/khoe/results.csv", "LightGBM": "experiments/chien/results.csv",
            "LogisticRegression": "experiments/hung/results.csv"}
+# P2/P3: nếu có file results_<task>.csv (Optuna riêng cho bài đó) thì dùng, không thì dùng tham số GĐ4 của P1.
 DROP_KEYS = {"n_jobs", "random_state", "objective", "tree_method", "max_iter", "n_trials", "solver", "verbosity"}
 
 
@@ -74,6 +80,9 @@ DROP_KEYS = {"n_jobs", "random_state", "objective", "tree_method", "max_iter", "
 def best_params(model: str) -> dict:
     """Tham số Optuna tốt nhất của GĐ4 (dòng *optuna* có PR-AUC cao nhất)."""
     path = REPO_ROOT / RESULTS[model]
+    task_path = path.with_name(f"results_{TASK}.csv")
+    if TASK != "p1" and task_path.exists():
+        path = task_path
     if not path.exists():
         return {}
     rows = [r for r in csv.DictReader(path.open(encoding="utf-8")) if "optuna" in r["case_id"]]
@@ -225,16 +234,21 @@ def main(argv=None) -> int:
         raise SystemExit("--synthetic không dùng với dữ liệu thật trên S3")
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out = Path(a.out or REPO_ROOT / "reports/stage5" / run_id)
-    docs = Path(a.docs_dir or (REPO_ROOT / "docs/stage5" if real else out / "docs"))
+    docs_real = REPO_ROOT / ("docs/stage5" if TASK == "p1" else f"docs/stage5/{TASK}")
+    docs = Path(a.docs_dir or (docs_real if real else out / "docs"))
     out.mkdir(parents=True, exist_ok=True)
-    lock_path = (REPO_ROOT / "docs/stage5/test_lock.json") if real else out / "test_lock.json"
+    lock_path = (docs_real / "test_lock.json") if real else out / "test_lock.json"
 
     # ---------- dữ liệu ----------
     LOG.info("Đọc Gold và split...")
     df = load_gold(a.gold)
     manifest = load_manifest(a.split)
-    if not a.synthetic and manifest.get("sha256") != LOCKED_SPLIT_SHA256:
+    locked = LOCKED_SPLIT_SHA256.get(TASK)
+    if not a.synthetic and locked and manifest.get("sha256") != locked:
         raise SystemExit("Split không phải bản V1 đã khóa (docs/stage3/split_and_baseline.md)")
+    if not a.synthetic and not locked:
+        LOG.warning("Split %s chưa được khóa trong code: sha256 %s — ghi vào decision_log trước khi mở test",
+                    TASK.upper(), manifest.get("sha256"))
     if a.open_test and lock_path.exists() and not a.force_reopen_test:
         raise SystemExit(f"Tập test ĐÃ mở trước đây ({lock_path}). Không mở lại.")
     parts = apply_split(df, manifest, parts=("train", "val", "test") if a.open_test else ("train", "val"))
@@ -242,7 +256,7 @@ def main(argv=None) -> int:
     feats = feature_columns(df)
     X, y, g = dev[feats], dev[LABEL].astype(int).to_numpy(), dev[GROUP_KEY].to_numpy()
     period = dev["anchor_year_group"].astype(str).to_numpy()
-    R = {"run_id": run_id, "git_commit": git_commit(), "data_version": manifest.get("data_version"),
+    R = {"task": TASK, "task_name": TASK_NAMES[TASK], "label": LABEL, "run_id": run_id, "git_commit": git_commit(), "data_version": manifest.get("data_version"),
          "split_sha256": manifest.get("sha256"), "real_data": real, "n_features": len(feats),
          "dev": {"rows": len(dev), "patients": int(dev[GROUP_KEY].nunique()), "positives": int(y.sum())}}
     folds = make_folds(y, g, a.folds)
@@ -394,7 +408,7 @@ def main(argv=None) -> int:
         R["robustness_test"] = summarize_curve(curve_t).to_dict(orient="records")
 
     # ---------- 9. Đóng gói ----------
-    version = (f"{'synthetic-' if not real else ''}p1-{chosen.lower()}-"
+    version = (f"{'synthetic-' if not real else ''}{TASK}-{chosen.lower()}-"
                f"{datetime.now(timezone.utc):%Y%m%d}-{git_commit()}")
     R["model_version"] = version
     metrics_pkg = {"cv": {k: {kk: vv for kk, vv in v.items() if kk != "per_fold"} for k, v in cv_table.items()},
@@ -402,7 +416,7 @@ def main(argv=None) -> int:
                    "test": R.get("test", {}).get("models", {}).get(chosen)}
     from experiments.stage5.report import model_card
     cat_cols = set(split_feature_types(dev, feats)[1])
-    bundle_dir = save_bundle(REPO_ROOT / "artifacts/models/p1" / version, model=final, calibrator=calibrator,
+    bundle_dir = save_bundle(REPO_ROOT / "artifacts/models" / TASK / version, model=final, calibrator=calibrator,
                              fold_models=fold_models, feature_columns=feats,
                              dtypes={c: ("object" if c in cat_cols else "float") for c in feats},
                              thresholds=thresholds, rules=rules, drift_ref=ref, metrics=metrics_pkg,

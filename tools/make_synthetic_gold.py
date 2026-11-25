@@ -1,7 +1,8 @@
-"""Tạo bảng Gold P1 GIẢ đúng contracts/gold_schema_p1.json — để TV2–TV5 code song song
+"""Tạo bảng Gold GIẢ đúng contracts/gold_schema_<task>.json — để code song song
 (train/evaluate, SHAP, API, UI) trước khi có Gold thật.
 
     python tools/make_synthetic_gold.py --rows 1000 --out sample_data/gold_p1_fake.csv
+    python tools/make_synthetic_gold.py --task p2 --rows 3000 --out data/gold_p2_fake.csv
 """
 from __future__ import annotations
 
@@ -30,9 +31,10 @@ def main() -> None:
     ap.add_argument("--rows", type=int, default=1000)
     ap.add_argument("--out", default="sample_data/gold_p1_fake.csv")
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--task", choices=["p1", "p2", "p3"], default="p1")
     a = ap.parse_args()
     rng = np.random.default_rng(a.seed)
-    schema = json.loads((ROOT / "contracts/gold_schema_p1.json").read_text(encoding="utf-8"))
+    schema = json.loads((ROOT / f"contracts/gold_schema_{a.task}.json").read_text(encoding="utf-8"))
     n = a.rows
     df = pd.DataFrame({
         "subject_id": 10_000_000 + rng.integers(0, int(n * .7), n),
@@ -79,20 +81,42 @@ def main() -> None:
                         "spo2_min": (91, 4), "temp_max_c": (37.3, .6)}.items():
         df[c] = np.where(icu, rng.normal(mu, sd, n).round(1), np.nan)
     df["vitals_missing"] = (~icu).astype(int)
-    df["label_mortality"] = (rng.random(n) < 1 / (1 + np.exp(-risk))).astype(int)
+    if a.task == "p1":
+        df["label_mortality"] = (rng.random(n) < 1 / (1 + np.exp(-risk))).astype(int)
+    else:  # mốc = xuất viện: thêm thông tin cả đợt nằm viện
+        df["prediction_time"] = df["admittime"] + pd.to_timedelta(rng.gamma(2.0, 2.5, n) * 24 + 25, unit="h")
+        df["icu_any"] = df.pop("in_icu_24h")
+        df["los_days"] = ((df["prediction_time"] - df["admittime"]).dt.total_seconds() / 86400).round(3)
+        df["icu_days"] = np.where(df["icu_any"] == 1, (df["los_days"] * rng.uniform(.1, .6, n)).round(3), 0.0)
+        df["discharge_location_group"] = rng.choice(["HOME", "HOME_HEALTH", "FACILITY", "OTHER"], n, p=[.4, .3, .25, .05])
+        df["n_diagnoses"] = rng.poisson(14, n)
+        for h, q in [("ckd", .4), ("diabetes", .4), ("afib", .45), ("copd", .2), ("hypertension", .75),
+                     ("cad", .45), ("prior_mi", .1), ("stroke", .08)]:
+            df[f"dx_{h}"] = (rng.random(n) < q).astype(int)
+        for lab in LAB_PARAMS:
+            lo, hi = df[f"{lab}_min"], df[f"{lab}_max"]
+            df[f"{lab}_last"] = np.where(rng.random(n) < .25, np.nan, (lo + (hi - lo) * rng.random(n)).round(3))
+        df["n_lab_tests_stay"] = df.pop("n_lab_tests_24h") * 4
+        r2 = (risk + .15 * df["n_prior_adm_365d"] + .08 * df["los_days"].clip(0, 20)
+              + .4 * (df["discharge_location_group"] == "FACILITY") + .3 * df["dx_ckd"])
+        if a.task == "p2":
+            df["label_readmit30"] = (rng.random(n) < 1 / (1 + np.exp(-(r2 + .55)))).astype(int)
+        else:
+            df["label_mort90"] = (rng.random(n) < 1 / (1 + np.exp(-(r2 - .6)))).astype(int)
 
     # kiểm tra khớp schema
     expected = [c["name"] for c in schema["id_columns"] + schema["label_columns"] + schema["subgroup_only_columns"]]
     fc = schema["feature_columns"]
-    expected += [c["name"] for c in fc["demographic_admission"] + fc["history"] + fc["vitals_icu"]]
-    expected += [f"{l}{s}" for l in fc["labs"]["items"] for s in fc["labs"]["suffixes"]] + ["n_lab_tests_24h"]
+    expected += [c["name"] for c in fc["demographic_admission"] + fc["history"] + fc.get("stay", []) + fc["vitals_icu"]]
+    expected += [f"{l}{s}" for l in fc["labs"]["items"] for s in fc["labs"]["suffixes"]]
+    expected += [c["name"] for c in fc["labs"]["extra"]]
     missing = set(expected) - set(df.columns)
     extra = set(df.columns) - set(expected)
     assert not missing and not extra, f"Lệch schema: thiếu {missing}, thừa {extra}"
     df = df[expected]
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(a.out, index=False)
-    print(f"[OK] {len(df)} dòng × {df.shape[1]} cột, tỷ lệ dương {df['label_mortality'].mean():.3f} → {a.out}")
+    print(f"[OK] {len(df)} dòng × {df.shape[1]} cột, tỷ lệ dương {df[schema['label']].mean():.3f} → {a.out}")
 
 
 if __name__ == "__main__":

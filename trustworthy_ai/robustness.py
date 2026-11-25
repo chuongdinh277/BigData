@@ -23,7 +23,8 @@ SPECIAL_LABS = [lab for lab in LABS if lab not in CORE_LABS]
 
 # đơn vị che: tên → (cột giá trị, cột cờ thiếu)
 def _units() -> dict[str, tuple[list[str], str | None]]:
-    u = {f"lab:{lab}": ([f"{lab}_first", f"{lab}_min", f"{lab}_max"], f"{lab}_missing") for lab in LABS}
+    sufs = [s for s in SCHEMA["feature_columns"]["labs"]["suffixes"] if s != "_missing"]  # P2/P3 có thêm _last
+    u = {f"lab:{lab}": ([f"{lab}{s}" for s in sufs], f"{lab}_missing") for lab in LABS}
     u["vitals"] = (VITALS, "vitals_missing")
     for c in OMR:
         u[f"omr:{c}"] = ([c], None)

@@ -20,6 +20,9 @@ Thử nhanh trên mẫu 1% bệnh nhân (ghi ra gold/p1/_sample_0.01, không đ�
     python -m data_spark.pipeline_runner --steps features validate --sample-frac 0.01
 Chỉ in lệnh sẽ chạy, không chạy gì:
     python -m data_spark.pipeline_runner --dry-run
+P2/P3 (mốc = dischtime, nhãn của Hà ở <processed>/labels/p2|p3; bước features tự kiểm tra rò rỉ):
+    python -m data_spark.pipeline_runner --task p2 --steps features --version v1
+    python -m data_spark.pipeline_runner --task p3 --steps features --version v1
 """
 from __future__ import annotations
 
@@ -89,6 +92,25 @@ def build_commands(steps: list[str], paths: dict, *, version: str, fmt: str = "s
             c.append("--no-storetime-filter")
         if feature_report:
             c += ["--report", feature_report]
+        cmds.append(("features", c))
+    return cmds
+
+
+def discharge_commands(task: str, steps: list[str], paths: dict, *, version: str, fmt: str = "silver",
+                       sample_frac: float | None = None, no_storetime_filter: bool = False,
+                       out: str | None = None) -> list[tuple[str, list[str]]]:
+    """P2/P3: cohort, labels như P1; features = data_spark.features_discharge (đã gồm kiểm tra rò rỉ)."""
+    py = sys.executable
+    cmds = [c for c in build_commands([s for s in steps if s in ("cohort", "labels")], paths, version=version, fmt=fmt)]
+    if "features" in steps or "validate" in steps:
+        c = [py, "-m", "data_spark.features_discharge", "--task", task, "--fmt", fmt, "--version", version,
+             "--cohort", paths["cohort"]]
+        if out:
+            c += ["--out", out]
+        if sample_frac:
+            c += ["--sample-frac", str(sample_frac)]
+        if no_storetime_filter:
+            c.append("--no-storetime-filter")
         cmds.append(("features", c))
     return cmds
 
@@ -250,6 +272,7 @@ def validate(
 def main(argv: list[str] | None = None) -> int:
     cfg = load_yaml("configs/data.yaml")
     ap = argparse.ArgumentParser(description="Ghép cohort → labels → features → validate thành Dataset V1")
+    ap.add_argument("--task", choices=["p1", "p2", "p3"], default="p1")
     ap.add_argument("--steps", nargs="+", choices=ALL_STEPS, default=DEFAULT_STEPS)
     ap.add_argument("--version", default="v1")
     ap.add_argument("--fmt", choices=["silver", "bronze"], default="silver")
@@ -268,6 +291,14 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     paths = resolve_paths(cfg, args.version, args.sample_frac, args.cohort, args.out)
+    if args.task != "p1":
+        for name, cmd in discharge_commands(args.task, args.steps, paths, version=args.version, fmt=args.fmt,
+                                            sample_frac=args.sample_frac,
+                                            no_storetime_filter=args.no_storetime_filter, out=args.out):
+            if run_step(name, cmd, args.dry_run)["status"].startswith("FAILED"):
+                print(f"[DỪNG] Bước {name} lỗi.")
+                return 1
+        return 0
     labels = paths["labels_default"] if args.labels == "auto" else args.labels
     feature_report = str(REPO_ROOT / ("docs/stage2/features_result_sample.md" if args.sample_frac
                                       else "docs/stage2/features_result_full.md"))

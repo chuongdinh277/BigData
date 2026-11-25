@@ -3,10 +3,29 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import unicodedata as ud
+
 import numpy as np
 import pandas as pd
 
 SMALL = 10
+OUTCOME = {"p1": "tử vong", "p2": "tái nhập viện", "p3": "tử vong 90 ngày"}
+PURPOSE = {
+    "p1": "ước lượng xác suất tử vong trong viện của bệnh nhân suy tim ≥ 18 tuổi, tại thời điểm 24 giờ sau nhập viện (P1)",
+    "p2": "ước lượng xác suất tái nhập viện ngoài kế hoạch trong 30 ngày của bệnh nhân suy tim ≥ 18 tuổi, tại thời điểm "
+          "xuất viện còn sống (P2; chỉ quan sát được tái nhập tại cùng bệnh viện)",
+    "p3": "ước lượng xác suất tử vong do mọi nguyên nhân trong 90 ngày sau xuất viện của bệnh nhân suy tim ≥ 18 tuổi, "
+          "tại thời điểm xuất viện còn sống (P3; theo patients.dod)",
+}
+
+
+def _outcome_text(text: str, task: str) -> str:
+    """Đổi chữ 'tử vong' thành kết cục đúng của bài toán (P2: tái nhập viện, P3: tử vong 90 ngày)."""
+    if task == "p1":
+        return text
+    ev = OUTCOME[task]
+    text = ud.normalize("NFC", text)
+    return text.replace("Tử vong", ev[0].upper() + ev[1:]).replace("tử vong", ev)
 
 
 def _f(v, nd=3):
@@ -82,7 +101,7 @@ def figures(R: dict, fig_dir: Path) -> dict:
         mx = max(mx, b["mean_pred"].max(), b["obs_rate"].max())
     ax.plot([0, mx], [0, mx], "k:", lw=1, label="Hoàn hảo")
     ax.set_xlabel("Xác suất dự đoán trung bình (theo thập phân vị)")
-    ax.set_ylabel("Tỷ lệ tử vong thực tế")
+    ax.set_ylabel(_outcome_text("Tỷ lệ tử vong thực tế", R.get("task", "p1")))
     ax.set_title(f"Biểu đồ hiệu chỉnh — {R['chosen_model']}")
     ax.legend(fontsize=8)
     fig.tight_layout()
@@ -151,7 +170,7 @@ def figures(R: dict, fig_dir: Path) -> dict:
     dr = pd.DataFrame(R["drift"]["periods"])
     tv = pd.DataFrame(R["temporal_validation"]["rows"])
     fig, axes = plt.subplots(1, 2, figsize=(9, 3.4))
-    axes[0].plot(dr["period"], 100 * dr["positive_rate"], "o-", label="Tỷ lệ tử vong thực tế")
+    axes[0].plot(dr["period"], 100 * dr["positive_rate"], "o-", label=_outcome_text("Tỷ lệ tử vong thực tế", R.get("task", "p1")))
     axes[0].plot(dr["period"], 100 * dr["mean_predicted_cal"], "s--", label="Dự đoán trung bình")
     axes[0].set_ylabel("%")
     axes[0].set_title("Drift nhãn và điểm dự đoán")
@@ -196,7 +215,7 @@ def write_report(R: dict, docs: Path) -> Path:
     figs = figures(R, docs / "figures")
     ch = R["chosen_model"]
     L = []
-    L.append("# Giai đoạn 5 — Độ tin cậy và chọn mô hình (P1, Dataset V1)\n")
+    L.append(f"# Giai đoạn 5 — Độ tin cậy và chọn mô hình ({R.get('task_name', 'P1')}, Dataset V1)\n")
     L.append(f"Run `{R['run_id']}` · commit `{R['git_commit']}` · split sha256 `{str(R['split_sha256'])[:12]}…` · "
              f"{'**dữ liệu thật**' if R['real_data'] else '**DỮ LIỆU GIẢ — số liệu không có ý nghĩa**'} · "
              f"mô hình `{R['model_version']}`\n")
@@ -362,12 +381,12 @@ def write_report(R: dict, docs: Path) -> Path:
     # 9
     L.append("## 9. Gói mô hình\n")
     L.append(f"`{R['model_version']}`, gồm model + calibrator + 5 mô hình fold + ngưỡng + luật review + tham chiếu drift "
-             f"+ SHA256SUMS. Gói nằm cục bộ ở `artifacts/models/p1/{R['model_version']}/`"
+             f"+ SHA256SUMS. Gói nằm cục bộ ở `artifacts/models/{R.get('task', 'p1')}/{R['model_version']}/`"
              + (f", và đã tải lên `{R['bundle_s3']}`" if R.get("bundle_s3") else "") + ". GĐ6 nạp gói bằng `trustworthy_ai.bundle.HeartGuardModel`.\n")
 
     path = docs / "stage5_report.md"
     docs.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(L), encoding="utf-8")
+    path.write_text(_outcome_text("\n".join(L), R.get("task", "p1")), encoding="utf-8")
     return path
 
 
@@ -376,9 +395,10 @@ def model_card(R: dict) -> str:
     c = R["cv"][ch]
     test = R.get("test", {}).get("models", {}).get(ch)
     lines = [f"# Model card — {R.get('model_version', ch)}", "",
-             "**Mục đích:** ước lượng xác suất tử vong trong viện của bệnh nhân suy tim ≥ 18 tuổi, tại thời điểm 24 giờ "
-             "sau nhập viện (P1). Đây là nguyên mẫu nghiên cứu, **không dùng cho quyết định lâm sàng**.", "",
-             f"**Dữ liệu:** MIMIC-IV v3.1, Gold P1 {R['data_version']}, split sha256 `{R['split_sha256']}`.", "",
+             f"**Mục đích:** {PURPOSE[R.get('task', 'p1')]}. Đây là nguyên mẫu nghiên cứu, "
+             "**không dùng cho quyết định lâm sàng**.", "",
+             f"**Dữ liệu:** MIMIC-IV v3.1, Gold {R.get('task', 'p1').upper()} {R['data_version']}, "
+             f"nhãn `{R.get('label', 'label_mortality')}`, split sha256 `{R['split_sha256']}`.", "",
              f"**Mô hình:** {ch}, tham số Optuna từ GĐ4, huấn luyện lại trên train+validation; hiệu chỉnh "
              f"`{R['calibration'][ch]['method']}` học từ dự đoán out-of-fold.", "",
              f"**CV 5 fold theo bệnh nhân:** PR-AUC {c['pr_auc_mean']:.3f} ± {c['pr_auc_sd']:.3f}, "

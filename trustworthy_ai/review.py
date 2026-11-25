@@ -27,7 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def valid_ranges() -> dict[str, list[float]]:
     # đọc trực tiếp YAML (không qua data_spark) để backend không phải cài PySpark
     cfg = yaml.safe_load((REPO_ROOT / "configs/feature_items.yaml").read_text(encoding="utf-8"))
-    r = {f"{lab}_{s}": spec["valid_range"] for lab, spec in cfg["labs"].items() for s in ("first", "min", "max")}
+    r = {f"{lab}_{s}": spec["valid_range"] for lab, spec in cfg["labs"].items() for s in ("first", "min", "max", "last")}
     for spec in cfg["vitals"].values():
         for col in spec["feature_columns"]:
             r[col] = spec["valid_range"]

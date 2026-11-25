@@ -488,8 +488,12 @@ def lab_window(
     return j
 
 
-def lab_features(lab_win: DataFrame, lab_cfg: dict, min_unit_share: float = 0.95):
+def lab_features(lab_win: DataFrame, lab_cfg: dict, min_unit_share: float = 0.95,
+                 last_hours: int | None = None):
     """Tạo first/min/max theo từng lab và thống kê loại bỏ.
+
+    last_hours (dùng cho P2/P3, mốc = dischtime): thêm cột <lab>_last = giá trị đo
+    MUỘN NHẤT trong [prediction_time - last_hours, prediction_time]. Mặc định None → P1 không đổi.
 
     Dùng bảng mapping nhỏ thay cho CASE WHEN lồng nhau để tránh Spark
     sinh mã Java quá lớn (Janino: Code grows beyond 64 KB).
@@ -610,26 +614,30 @@ def lab_features(lab_win: DataFrame, lab_cfg: dict, min_unit_share: float = 0.95
 
     # 4) Tính theo dạng long trước rồi pivot để không tổng hợp 60 CASE WHEN.
     good = tagged.filter((F.col("f_nonnum") + F.col("f_unit") + F.col("f_range")) == 0)
-    per_lab = good.groupBy("hadm_id", "lab").agg(
+    per_lab_aggs = [
         F.min(F.struct("charttime", "valuenum")).getField("valuenum").alias("first"),
         F.min("valuenum").alias("min"),
         F.max("valuenum").alias("max"),
-    )
+    ]
+    suffixes = ["first", "min", "max"]
+    if last_hours:
+        in_last = F.col("charttime") >= F.col("prediction_time") - F.expr(f"INTERVAL {int(last_hours)} HOURS")
+        per_lab_aggs.append(
+            F.max(F.when(in_last, F.struct("charttime", "valuenum"))).getField("valuenum").alias("last")
+        )
+        suffixes.append("last")
+    per_lab = good.groupBy("hadm_id", "lab").agg(*per_lab_aggs)
     # Danh sách pivot tường minh bảo đảm có đủ các cột kể cả lab vắng mặt.
     wide = (
         per_lab.groupBy("hadm_id")
         .pivot("lab", names)
-        .agg(
-            F.first("first").alias("first"),
-            F.first("min").alias("min"),
-            F.first("max").alias("max"),
-        )
+        .agg(*[F.first(s).alias(s) for s in suffixes])
     )
     # Đặt lại thứ tự để khớp tên cột được hợp đồng Gold sử dụng.
     return (
         wide.select(
             "hadm_id",
-            *[f"{lab}_{suffix}" for lab in names for suffix in ("first", "min", "max")],
+            *[f"{lab}_{suffix}" for lab in names for suffix in suffixes],
         ),
         stats,
     )

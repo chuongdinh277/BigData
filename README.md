@@ -17,6 +17,8 @@ Dự án môn Big Data (Subject 4) — Nhóm 11. Dự đoán nguy cơ ở bệnh
 | 6 | React – FastAPI – Model | ⬜ (gói mô hình + `HeartGuardModel.predict` đã sẵn) |
 | 7 | Deploy EC2, báo cáo, slide | ⬜ |
 
+**Ba bài toán:** P1 tử vong trong viện (mốc +24h) · P2 tái nhập viện 30 ngày · P3 tử vong 90 ngày sau xuất viện (P2/P3 mốc = xuất viện). Gold P2/P3 và GĐ5 cho P2/P3: `docs/stage2/p2_p3_dataset.md` (`pipeline_runner --task p2|p3`, `HG_TASK=p2|p3`).
+
 **Chạy GĐ5 trên EC2:** `python -m experiments.stage5.run_stage5 --jobs 8` (test còn đóng) → nhóm chốt → `--open-test --upload`.
 
 ## Cấu trúc
@@ -25,6 +27,7 @@ Dự án môn Big Data (Subject 4) — Nhóm 11. Dự đoán nguy cơ ở bệnh
 configs/            data.yaml · hf_codes.yaml · feature_items.yaml
 contracts/          gold_schema_p1.json · api_contract.md
 data_spark/         common/ (session, io) · bronze_to_silver.py · stage1_feasibility.py
+                    features.py (P1) · features_discharge.py + quality_discharge.py (P2/P3)
                     (GĐ2: cohort.py · labels.py · features.py · quality.py · pipeline_runner.py)
 docs/               prediction_problem_spec.md · solution_specification.md · decision_log.md
   stage1/           data_inventory.md · cohort_spec.md · feature_spec.md · architecture.md

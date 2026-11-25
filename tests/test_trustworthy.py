@@ -182,12 +182,43 @@ def test_stage5_end_to_end_bundle_and_predict(gold, tmp_path):
         def download_file(self, bucket, key, dest):
             shutil.copy(Path(bundle) / key.rsplit("/", 1)[-1], dest)
 
-    import boto3
-    orig = boto3.client
-    boto3.client = lambda *_a, **_k: FakeS3()
+    import types
+    fake_boto3 = types.ModuleType("boto3")           # CI không cài boto3: dùng module giả
+    fake_boto3.client = lambda *_a, **_k: FakeS3()
+    saved = sys.modules.get("boto3")
+    sys.modules["boto3"] = fake_boto3
     try:
         m2 = HeartGuardModel.from_s3("s3://bucket/model-artifacts/p1/v-test/", cache_dir=tmp_path / "cache")
     finally:
-        boto3.client = orig
+        if saved is None:
+            sys.modules.pop("boto3", None)
+        else:
+            sys.modules["boto3"] = saved
     assert m2.model_version == model.model_version
     shutil.rmtree(bundle)
+
+
+@pytest.mark.parametrize("task,label", [("p2", "label_readmit30"), ("p3", "label_mort90")])
+def test_stage5_runs_for_discharge_tasks(tmp_path, task, label):
+    """HG_TASK chọn hợp đồng/nhãn; chạy trong tiến trình con vì config đọc biến môi trường lúc import."""
+    import json
+    import os
+    import shutil
+    env = {**os.environ, "HG_TASK": task, "PYTHONIOENCODING": "utf-8"}
+    gpath, spath, out = tmp_path / "gold.csv", tmp_path / "split.json", tmp_path / "run"
+    run = lambda *args: subprocess.run([sys.executable, *args], cwd=REPO_ROOT, env=env,  # noqa: E731
+                                       capture_output=True, text=True, encoding="utf-8")
+    r = run(str(REPO_ROOT / "tools/make_synthetic_gold.py"), "--task", task, "--rows", "2500", "--out", str(gpath))
+    assert r.returncode == 0, r.stderr
+    assert run("-m", "experiments.common.split", "--gold", str(gpath), "--out", str(spath)).returncode == 0
+    r = run("-m", "experiments.stage5.run_stage5", "--gold", str(gpath), "--split", str(spath), "--synthetic",
+            "--quick", "--open-test", "--folds", "3", "--candidates", "XGBoost", "LogisticRegression",
+            "--out", str(out))
+    assert r.returncode == 0, r.stderr[-3000:]
+    R = json.loads((out / "stage5_results.json").read_text(encoding="utf-8"))
+    assert R["task"] == task and R["label"] == label and R["n_features"] == 146
+    assert f"/{task}/" in R["bundle_dir"].replace("\\", "/") and "test" in R
+    report = (out / "docs/stage5_report.md").read_text(encoding="utf-8")
+    assert ("tái nhập viện" if task == "p2" else "tử vong 90 ngày") in report
+    assert "icu_trong_dot" in report and "noi_xuat_vien" in report
+    shutil.rmtree(R["bundle_dir"])

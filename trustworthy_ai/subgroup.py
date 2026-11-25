@@ -25,6 +25,10 @@ def add_subgroup_columns(df: pd.DataFrame, missing_frac: pd.Series | None = None
             out[name] = df[c].astype(str)
     if "in_icu_24h" in df:
         out["icu_24h"] = df["in_icu_24h"].map({1: "Có ICU", 0: "Không ICU"})
+    if "icu_any" in df:                                   # P2/P3: có nằm ICU trong đợt
+        out["icu_trong_dot"] = df["icu_any"].map({1: "Có ICU", 0: "Không ICU"})
+    if "discharge_location_group" in df:
+        out["noi_xuat_vien"] = df["discharge_location_group"].astype(str)
     if "hf_primary" in df:
         out["suy_tim_chinh"] = df["hf_primary"].map({1: "Chẩn đoán chính", 0: "Chẩn đoán phụ"})
     if "ntprobnp_missing" in df:
