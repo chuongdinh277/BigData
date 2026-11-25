@@ -20,7 +20,7 @@ jobs:
         run: |
           if git ls-files | grep -Ei '\.(csv\.gz|parquet)$' | grep -v '^sample_data/'; then
             echo "Phát hiện file dữ liệu ngoài sample_data/ — xóa khỏi commit!"; exit 1; fi
-      - run: python -m py_compile data_spark/*.py data_spark/common/*.py tools/*.py
+      - run: python -m py_compile data_spark/*.py data_spark/common/*.py tools/*.py trustworthy_ai/*.py experiments/stage5/*.py
       - run: python tools/make_synthetic_gold.py --rows 200 --out /tmp/gold.csv
       - run: python -m pytest -q tests --junitxml=reports/quality/pytest.xml
       - name: Verify synthetic quality workflow and rejection of bad inputs

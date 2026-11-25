@@ -9,13 +9,15 @@ Dự án môn Big Data (Subject 4) — Nhóm 11. Dự đoán nguy cơ ở bệnh
 
 | Giai đoạn | Nội dung | Trạng thái |
 |---|---|---|
-| **1** | Xác định bài toán & thiết kế | 🟡 Bản đề xuất v0.1, chờ nhóm duyệt + chạy số liệu khả thi |
-| 2 | Pipeline Spark → Dataset V1 | ⬜ |
-| 3 | Split, chiến lược, thiết kế thí nghiệm | ⬜ |
-| 4 | Chạy, sàng lọc, tự tuning | ⬜ |
-| 5 | Đánh giá độ tin cậy, chọn model | ⬜ |
-| 6 | React – FastAPI – Model | ⬜ |
+| 1 | Xác định bài toán & thiết kế | ✅ |
+| 2 | Pipeline Spark → Dataset V1 (Gold P1 73,768 dòng × 114 đặc trưng) | ✅ `docs/stage2/` |
+| 3 | Chia tập theo bệnh nhân, khung thí nghiệm chung | ✅ `docs/stage3/` |
+| 4 | So sánh 4 mô hình × 3 chiến lược | ✅ `docs/stage4/comparison.md` |
+| 5 | Độ tin cậy: CV, hiệu chỉnh, SHAP, thiếu dữ liệu, nhóm bệnh nhân, drift, review, test, đóng gói | 🟡 Mã xong + test trên dữ liệu giả; chờ chạy trên EC2 — `docs/stage5/stage5_method.md` |
+| 6 | React – FastAPI – Model | ⬜ (gói mô hình + `HeartGuardModel.predict` đã sẵn) |
 | 7 | Deploy EC2, báo cáo, slide | ⬜ |
+
+**Chạy GĐ5 trên EC2:** `python -m experiments.stage5.run_stage5 --jobs 8` (test còn đóng) → nhóm chốt → `--open-test --upload`.
 
 ## Cấu trúc
 
@@ -27,7 +29,8 @@ data_spark/         common/ (session, io) · bronze_to_silver.py · stage1_feasi
 docs/               prediction_problem_spec.md · solution_specification.md · decision_log.md
   stage1/           data_inventory.md · cohort_spec.md · feature_spec.md · architecture.md
 experiments/        member_1 … member_5
-trustworthy_ai/     calibration, SHAP, missing, subgroup, drift (GĐ5)
+trustworthy_ai/     evaluation, calibration, explain (SHAP), robustness, subgroup, drift, review, bundle (GĐ5)
+experiments/stage5/ run_stage5.py (chạy toàn bộ GĐ5) · report.py
 backend/ frontend/ deployment/     (GĐ6–7)
 tools/              make_synthetic_mimic.py · make_synthetic_gold.py
 sample_data/        gold_p1_fake.csv (dữ liệu GIẢ, an toàn)

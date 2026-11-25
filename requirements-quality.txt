@@ -12,3 +12,7 @@ lightgbm>=4.5
 # XGBoost experiments (GĐ4)
 xgboost>=2.1
 optuna>=4.0
+
+# GĐ5 trustworthy_ai (hiệu chỉnh, SHAP gốc của XGBoost/LightGBM, drift, review, báo cáo)
+matplotlib>=3.8
+joblib>=1.3
