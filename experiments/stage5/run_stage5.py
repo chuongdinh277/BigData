@@ -83,7 +83,16 @@ def best_params(model: str) -> dict:
     return {k: v for k, v in json.loads(row["params"]).items() if k not in DROP_KEYS}
 
 
-def candidate_pipelines(df: pd.DataFrame, feats: list[str], jobs: int, names: list[str]) -> dict:
+def torch_available() -> bool:
+    try:
+        import torch  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def candidate_pipelines(df: pd.DataFrame, feats: list[str], jobs: int, names: list[str],
+                        osma_params: dict | None = None) -> dict:
     num, cat = split_feature_types(df, feats)
     out = {}
     if "XGBoost" in names:
@@ -96,6 +105,10 @@ def candidate_pipelines(df: pd.DataFrame, feats: list[str], jobs: int, names: li
         from experiments.hung.run_lr import lr_pipeline
         p = best_params("LogisticRegression") or {"C": 1.0, "penalty": "l2", "class_weight": None}
         out["LogisticRegression"] = (lr_pipeline(df, feats, solver="liblinear", **p), p)
+    if "OSMANet" in names:
+        from trustworthy_ai.osma_net import osma_pipeline
+        p = {"random_state": SEED, **(osma_params or {})}
+        out["OSMANet"] = (osma_pipeline(n_jobs=jobs, **p), p)
     return out
 
 
@@ -202,7 +215,10 @@ def main(argv=None) -> int:
     ap.add_argument("--split", default=DEFAULT_SPLIT)
     ap.add_argument("--out", default=None, help="Thư mục kết quả chi tiết (mặc định reports/stage5/<run_id>)")
     ap.add_argument("--docs-dir", default=None, help="Nơi ghi báo cáo .md + hình (mặc định docs/stage5 với dữ liệu thật)")
-    ap.add_argument("--candidates", nargs="+", default=["XGBoost", "LightGBM", "LogisticRegression"])
+    ap.add_argument("--candidates", nargs="+", default=None,
+                    help="Mặc định XGBoost LightGBM LogisticRegression (+ OSMANet nếu đã cài PyTorch)")
+    ap.add_argument("--osma-epochs", type=int, default=40)
+    ap.add_argument("--osma-hidden", type=int, default=16)
     ap.add_argument("--model", default=None, help="Ép chọn mô hình (mặc định: PR-AUC CV cao nhất)")
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--jobs", type=int, default=4)
@@ -217,8 +233,11 @@ def main(argv=None) -> int:
     ap.add_argument("--quick", action="store_true", help="Giảm số bootstrap/lặp để thử nhanh")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if a.candidates is None:
+        a.candidates = ["XGBoost", "LightGBM", "LogisticRegression"] + (["OSMANet"] if torch_available() else [])
     if a.quick:
         a.n_boot, a.subgroup_boot, a.repeats, a.shap_sample = 100, 30, 1, 1500
+        a.osma_epochs = min(a.osma_epochs, 8)
 
     real = str(a.gold).startswith(("s3://", "s3a://"))
     if a.synthetic and real:
@@ -248,7 +267,8 @@ def main(argv=None) -> int:
     folds = make_folds(y, g, a.folds)
 
     # ---------- 1. CV + chọn mô hình ----------
-    cands = candidate_pipelines(df, feats, a.jobs, a.candidates)
+    cands = candidate_pipelines(df, feats, a.jobs, a.candidates,
+                                {"epochs": a.osma_epochs, "hidden": a.osma_hidden})
     cvs, cv_table = {}, {}
     for name, (pipe, params) in cands.items():
         LOG.info("CV %d fold: %s", a.folds, name)
@@ -262,6 +282,8 @@ def main(argv=None) -> int:
         cv_table[name]["pr_auc_diff_vs_chosen_sd"] = float(d.std(ddof=1)) if len(d) > 1 else float("nan")
     R["cv"] = cv_table
     R["chosen_model"] = chosen
+    R["chosen_by"] = "--model (nhóm chọn)" if a.model else "PR-AUC CV cao nhất"
+    R["best_by_cv"] = max(cv_table, key=lambda m: cv_table[m]["pr_auc_mean"])
     LOG.info("Chọn mô hình: %s", chosen)
 
     # ---------- 2. Hiệu chỉnh + ngưỡng ----------
@@ -299,7 +321,7 @@ def main(argv=None) -> int:
     shap_df, base = expl.contributions(sample)
     imp = global_importance(shap_df)
     fold_imps = [global_importance(Explainer(m, background).contributions(sample)[0]) for m in fold_models]
-    R["shap"] = {"method": "TreeSHAP" if chosen != "LogisticRegression" else "LinearSHAP",
+    R["shap"] = {"method": {"LogisticRegression": "LinearSHAP", "OSMANet": "ExactAdditive"}.get(chosen, "TreeSHAP"),
                  "sample_n": len(sample), "base_value_mean": float(np.mean(base)),
                  "top_features": imp.head(25).to_dict(orient="records"),
                  "families": family_importance(imp).head(15).to_dict(orient="records"),
@@ -307,6 +329,16 @@ def main(argv=None) -> int:
                  "fold_stability": importance_stability([imp] + fold_imps),
                  "additivity_max_error": float(np.max(np.abs(
                      base + shap_df.sum(axis=1).to_numpy() - logit(final.predict_proba(sample)[:, 1]))))}
+
+    if "OSMANet" in cvs:
+        osma_final = final if chosen == "OSMANet" else clone(cands["OSMANet"][0]).fit(X, y)
+        osm = osma_final.steps[-1][1]
+        sysc = osm.system_scores(sample[osm.feature_names_in_])
+        R["osma"] = {"chosen": chosen == "OSMANet", "epochs_param": a.osma_epochs,
+                     "system_importance": sysc.abs().mean().sort_values(ascending=False).to_dict()}
+        if chosen != "OSMANet":
+            R["osma"]["shap_top"] = global_importance(
+                Explainer(osma_final).contributions(sample)[0]).head(15).to_dict(orient="records")
 
     # ---------- 4. Thiếu dữ liệu ----------
     LOG.info("Độ bền khi thiếu dữ liệu...")

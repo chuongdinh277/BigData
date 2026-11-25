@@ -112,6 +112,25 @@ class HeartGuardModel:
         bg = d / "explainer_background.joblib"
         self.explainer = Explainer(self.model, joblib.load(bg) if bg.exists() else None)
 
+    @classmethod
+    def from_s3(cls, s3_uri: str, cache_dir: str | Path = "artifacts/models/cache", verify: bool = True):
+        """Tải gói từ s3://.../model-artifacts/p1/<version>/ về thư mục cache (dùng IAM Role của EC2,
+        không dùng access key trong code), kiểm SHA256 rồi nạp. Đã có trong cache thì không tải lại."""
+        import boto3
+        bucket, _, prefix = s3_uri.replace("s3a://", "s3://")[len("s3://"):].partition("/")
+        prefix = prefix.rstrip("/") + "/"
+        local = Path(cache_dir) / prefix.rstrip("/").rsplit("/", 1)[-1]
+        if not (local / "SHA256SUMS").exists():
+            local.mkdir(parents=True, exist_ok=True)
+            s3 = boto3.client("s3")
+            keys = [o["Key"] for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix)
+                    for o in page.get("Contents", [])]
+            if not keys:
+                raise FileNotFoundError(f"Không thấy gói mô hình tại {s3_uri}")
+            for k in keys:
+                s3.download_file(bucket, k, str(local / k[len(prefix):]))
+        return cls(local, verify=verify)
+
     # ---------- chuẩn hóa đầu vào ----------
     def to_frame(self, records: list[dict] | dict) -> pd.DataFrame:
         records = [records] if isinstance(records, dict) else records

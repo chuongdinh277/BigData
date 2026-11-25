@@ -217,7 +217,11 @@ def write_report(R: dict, docs: Path) -> Path:
                      f"{c['pr_auc_diff_vs_chosen_mean']:+.3f} ± {c['pr_auc_diff_vs_chosen_sd']:.3f}" if n != ch else "–",
                      _f(c["seconds"], 0)])
     L.append(_table(["Mô hình", "PR-AUC", "ROC-AUC", "Brier", "Mô hình chọn hơn (PR-AUC, theo fold)", "Giây"], rows))
-    L.append(f"\n**Chọn: {ch}** (PR-AUC trung bình cao nhất). Nếu chênh lệch nhỏ hơn độ lệch chuẩn giữa các fold, "
+    if R.get("chosen_by", "").startswith("--model"):
+        why = f"nhóm chỉ định bằng `--model`; mô hình có PR-AUC CV cao nhất là {R['best_by_cv']}"
+    else:
+        why = "PR-AUC trung bình cao nhất"
+    L.append(f"\n**Chọn: {ch}** ({why}). Nếu chênh lệch nhỏ hơn độ lệch chuẩn giữa các fold, "
              "thì nói đúng là các mô hình **ngang nhau**.\n")
     L.append(f"![CV]({'figures/' + figs['cv']})\n")
 
@@ -242,7 +246,9 @@ def write_report(R: dict, docs: Path) -> Path:
     # 3
     sh = R["shap"]
     L.append("## 3. Giải thích mô hình (SHAP)\n")
-    how = "TreeSHAP chính xác do XGBoost/LightGBM tính" if sh["method"] == "TreeSHAP" else "công thức đóng coef·(x − E[x])"
+    how = {"TreeSHAP": "TreeSHAP chính xác do XGBoost/LightGBM tính",
+           "LinearSHAP": "công thức đóng coef·(x − E[x])",
+           "ExactAdditive": "OSMA-Net cộng tính: h_j(x_j) − E[h_j], đúng bằng giá trị Shapley"}[sh["method"]]
     L.append(f"Phương pháp: **{sh['method']}** ({how}), tính trên mẫu {_n(sh['sample_n'])} ca. "
              f"Kiểm tra cộng tính: sai số lớn nhất |base + ΣSHAP − logit(p)| = {sh['additivity_max_error']:.2e}.\n")
     st = sh["fold_stability"]
@@ -255,6 +261,20 @@ def write_report(R: dict, docs: Path) -> Path:
     L.append(f"\n![SHAP]({'figures/' + figs['shap']}) ![Nhóm]({'figures/' + figs['shap_family']})\n")
     L.append("Giải thích từng ca: hàm `HeartGuardModel.predict()` trả về `explanation.top_features` "
              "(đặc trưng, giá trị, SHAP, hướng). Màn hình SHAP ở GĐ6 dùng trực tiếp kết quả này.\n")
+
+    if "osma" in R:
+        o = R["osma"]
+        L.append("### Mô hình lõi OSMA-Net\n")
+        L.append("OSMA-Net là mạng cộng tính theo hệ cơ quan và nhận biết thiếu dữ liệu: mỗi đặc trưng có một hàm riêng, "
+                 "khi thiếu thì dùng giá trị 'nguy cơ khi thiếu' do mô hình học, không điền trung vị. "
+                 "Mô hình được so sánh công bằng với các mô hình khác ở mục 1 "
+                 f"({'được chọn' if o['chosen'] else 'không được chọn'}). "
+                 "Tầm quan trọng theo hệ cơ quan (mean |điểm|, log-odds):\n")
+        L.append(_table(["Hệ cơ quan", "mean |điểm|"], [[k, _f(v, 4)] for k, v in o["system_importance"].items()]))
+        if o.get("shap_top"):
+            L.append("\n10 đặc trưng quan trọng nhất của OSMA-Net: " +
+                     ", ".join(r["feature"] for r in o["shap_top"][:10]) + ".")
+        L.append("")
 
     # 4
     L.append("## 4. Độ bền khi thiếu dữ liệu\n")
