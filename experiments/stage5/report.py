@@ -247,8 +247,7 @@ def write_report(R: dict, docs: Path) -> Path:
     sh = R["shap"]
     L.append("## 3. Giải thích mô hình (SHAP)\n")
     how = {"TreeSHAP": "TreeSHAP chính xác do XGBoost/LightGBM tính",
-           "LinearSHAP": "công thức đóng coef·(x − E[x])",
-           "ExactAdditive": "OSMA-Net cộng tính: h_j(x_j) − E[h_j], đúng bằng giá trị Shapley"}[sh["method"]]
+           "LinearSHAP": "công thức đóng coef·(x − E[x])"}[sh["method"]]
     L.append(f"Phương pháp: **{sh['method']}** ({how}), tính trên mẫu {_n(sh['sample_n'])} ca. "
              f"Kiểm tra cộng tính: sai số lớn nhất |base + ΣSHAP − logit(p)| = {sh['additivity_max_error']:.2e}.\n")
     st = sh["fold_stability"]
@@ -261,20 +260,6 @@ def write_report(R: dict, docs: Path) -> Path:
     L.append(f"\n![SHAP]({'figures/' + figs['shap']}) ![Nhóm]({'figures/' + figs['shap_family']})\n")
     L.append("Giải thích từng ca: hàm `HeartGuardModel.predict()` trả về `explanation.top_features` "
              "(đặc trưng, giá trị, SHAP, hướng). Màn hình SHAP ở GĐ6 dùng trực tiếp kết quả này.\n")
-
-    if "osma" in R:
-        o = R["osma"]
-        L.append("### Mô hình lõi OSMA-Net\n")
-        L.append("OSMA-Net là mạng cộng tính theo hệ cơ quan và nhận biết thiếu dữ liệu: mỗi đặc trưng có một hàm riêng, "
-                 "khi thiếu thì dùng giá trị 'nguy cơ khi thiếu' do mô hình học, không điền trung vị. "
-                 "Mô hình được so sánh công bằng với các mô hình khác ở mục 1 "
-                 f"({'được chọn' if o['chosen'] else 'không được chọn'}). "
-                 "Tầm quan trọng theo hệ cơ quan (mean |điểm|, log-odds):\n")
-        L.append(_table(["Hệ cơ quan", "mean |điểm|"], [[k, _f(v, 4)] for k, v in o["system_importance"].items()]))
-        if o.get("shap_top"):
-            L.append("\n10 đặc trưng quan trọng nhất của OSMA-Net: " +
-                     ", ".join(r["feature"] for r in o["shap_top"][:10]) + ".")
-        L.append("")
 
     # 4
     L.append("## 4. Độ bền khi thiếu dữ liệu\n")

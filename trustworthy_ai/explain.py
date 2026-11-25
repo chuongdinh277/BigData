@@ -37,11 +37,6 @@ class Explainer:
         self.prep = pipeline.named_steps["prep"]
         self.model = pipeline.steps[-1][1]
         self.kind = type(self.model).__name__
-        self.bg_mean_t = None
-        if hasattr(self.model, "additive_contributions"):   # OSMA-Net: mô hình cộng tính, giải thích sẵn
-            self.kind = "OSMANet"
-            self.input_columns = list(self.model.feature_names_in_)
-            return
         names = list(self.prep.get_feature_names_out())
         self.input_columns = list(self.prep.feature_names_in_)
         cat_cols = []
@@ -68,8 +63,6 @@ class Explainer:
 
     def contributions(self, X: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray]:
         """Trả (SHAP theo cột gốc [n × p], base_value [n]) ở thang log-odds."""
-        if self.kind == "OSMANet":
-            return self.model.additive_contributions(X[self.input_columns])
         Xt = _dense(self.prep.transform(X[self.input_columns]))
         if self.kind == "XGBClassifier":
             import xgboost as xgb
@@ -96,15 +89,9 @@ class Explainer:
             v = None if v is None or (isinstance(v, float) and np.isnan(v)) else (v.item() if hasattr(v, "item") else v)
             feats.append({"feature": f, "value": v, "shap": round(float(s[f]), 5),
                           "direction": "tăng nguy cơ" if s[f] > 0 else "giảm nguy cơ"})
-        method = {"LogisticRegression": "LinearSHAP", "OSMANet": "ExactAdditive(OSMA-Net)"}.get(self.kind, "TreeSHAP")
-        out = {"method": method,
+        return {"method": "TreeSHAP" if self.kind != "LogisticRegression" else "LinearSHAP",
                 "scale": "log-odds (trước hiệu chỉnh)", "base_value": round(float(base[0]), 5),
                 "top_features": feats}
-        if self.kind == "OSMANet":   # thêm điểm nguy cơ theo hệ cơ quan
-            sc = self.model.system_scores(row[self.input_columns]).iloc[0]
-            out["organ_systems"] = [{"system": k, "score": round(float(v), 5)}
-                                    for k, v in sc.sort_values(key=abs, ascending=False).items()]
-        return out
 
 
 def global_importance(shap_df: pd.DataFrame) -> pd.DataFrame:

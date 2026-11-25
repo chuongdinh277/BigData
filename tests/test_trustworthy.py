@@ -36,48 +36,24 @@ def _pipeline(df, feats, kind):
     elif kind == "lgbm":
         from lightgbm import LGBMClassifier
         model = LGBMClassifier(n_estimators=40, num_leaves=15, verbosity=-1, random_state=0)
-    elif kind == "osma":
-        pytest.importorskip("torch")
-        from trustworthy_ai.osma_net import osma_pipeline
-        return osma_pipeline(epochs=5, n_jobs=2)
     else:
         model = LogisticRegression(max_iter=500)
     return Pipeline([("prep", make_preprocessor(num, cat, scale=kind == "lr")), ("model", model)])
 
 
-@pytest.mark.parametrize("kind", ["xgb", "lgbm", "lr", "osma"])
+@pytest.mark.parametrize("kind", ["xgb", "lgbm", "lr"])
 def test_shap_is_additive_and_maps_back_to_original_columns(gold, kind):
     feats = feature_columns(gold)
     X, y = gold[feats], gold[LABEL].to_numpy()
     pipe = _pipeline(gold, feats, kind).fit(X, y)
     ex = Explainer(pipe, X.sample(300, random_state=0) if kind == "lr" else None)
     shap_df, base = ex.contributions(X.head(200))
-    expected = {c for c in feats if not c.endswith("_missing")} if kind == "osma" else set(feats)
-    assert set(shap_df.columns) == expected                        # one-hot đã gộp về cột gốc
+    assert set(shap_df.columns) == set(feats)                      # one-hot đã gộp về cột gốc
     margin = logit(pipe.predict_proba(X.head(200))[:, 1])
     assert np.max(np.abs(base + shap_df.sum(axis=1).to_numpy() - margin)) < 1e-3
     one = ex.explain_row(X.head(1), top_k=5)
     assert len(one["top_features"]) == 5 and {"feature", "value", "shap", "direction"} <= set(one["top_features"][0])
     assert global_importance(shap_df)["mean_abs_shap"].is_monotonic_decreasing
-    if kind == "osma":
-        assert one["organ_systems"] and one["method"].startswith("ExactAdditive")
-
-
-def test_osma_net_uses_learned_missing_risk_and_survives_pickle(gold):
-    pytest.importorskip("torch")
-    import pickle
-    from trustworthy_ai.osma_net import organ_system, osma_pipeline
-    feats = feature_columns(gold)
-    pipe = osma_pipeline(epochs=5, n_jobs=2).fit(gold[feats], gold[LABEL])
-    row = gold[feats].head(1).copy()
-    miss = row.copy()
-    miss[["lactate_first", "lactate_min", "lactate_max"]] = np.nan
-    a = pipe.predict_proba(row)[0, 1]
-    b = pipe.predict_proba(miss)[0, 1]
-    assert np.isfinite(b) and (a != b or row["lactate_first"].isna().all())
-    again = pickle.loads(pickle.dumps(pipe))
-    assert np.allclose(again.predict_proba(gold[feats].head(50)), pipe.predict_proba(gold[feats].head(50)))
-    assert organ_system("creatinine_max") == "than" and organ_system("ntprobnp_first") == "tim_mach"
 
 
 def test_calibration_fixes_miscalibrated_probabilities():
@@ -173,8 +149,7 @@ def test_stage5_end_to_end_bundle_and_predict(gold, tmp_path):
     from experiments.stage5 import run_stage5
     out = tmp_path / "run"
     assert run_stage5.main(["--gold", str(gpath), "--split", str(spath), "--synthetic", "--quick", "--open-test",
-                            "--folds", "3", "--candidates", "XGBoost", "LogisticRegression",
-                            *(["OSMANet"] if run_stage5.torch_available() else []), "--out", str(out)]) == 0
+                            "--folds", "3", "--candidates", "XGBoost", "LogisticRegression", "--out", str(out)]) == 0
     assert (out / "docs/stage5_report.md").exists() and (out / "test_lock.json").exists()
     with pytest.raises(SystemExit):                                # test chỉ được mở một lần
         run_stage5.main(["--gold", str(gpath), "--split", str(spath), "--synthetic", "--quick", "--open-test",
