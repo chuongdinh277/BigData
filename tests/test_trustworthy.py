@@ -182,12 +182,17 @@ def test_stage5_end_to_end_bundle_and_predict(gold, tmp_path):
         def download_file(self, bucket, key, dest):
             shutil.copy(Path(bundle) / key.rsplit("/", 1)[-1], dest)
 
-    import boto3
-    orig = boto3.client
-    boto3.client = lambda *_a, **_k: FakeS3()
+    import types
+    fake_boto3 = types.ModuleType("boto3")           # CI không cài boto3: dùng module giả
+    fake_boto3.client = lambda *_a, **_k: FakeS3()
+    saved = sys.modules.get("boto3")
+    sys.modules["boto3"] = fake_boto3
     try:
         m2 = HeartGuardModel.from_s3("s3://bucket/model-artifacts/p1/v-test/", cache_dir=tmp_path / "cache")
     finally:
-        boto3.client = orig
+        if saved is None:
+            sys.modules.pop("boto3", None)
+        else:
+            sys.modules["boto3"] = saved
     assert m2.model_version == model.model_version
     shutil.rmtree(bundle)
