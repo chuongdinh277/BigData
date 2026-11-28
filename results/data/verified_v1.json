@@ -1,0 +1,58 @@
+{
+  "_note": "Số liệu TỔNG HỢP đã chạy trên MIMIC-IV v3.1 thật (Dataset V1, 11–25/11/2026). Không chứa dòng bệnh nhân. Ô < 10 đã che. Nguồn: các báo cáo GĐ2–GĐ4 của nhóm, kiểm tra chéo ngày 26/11/2026.",
+  "mimic_version": "3.1",
+  "bronze": {"modules": {"hosp": 22, "icu": 9}, "compressed_gb": 10.0,
+             "largest_tables_gz": {"labevents": "2.4 GB", "chartevents": "3.3 GB"}},
+  "cohort_funnel": [
+    {"step": "S0", "rule": "Toàn bộ admissions", "patients": 223452, "admissions": 546028, "excluded": null},
+    {"step": "S1", "rule": "Có mã suy tim ở mọi seq_num", "patients": 31428, "admissions": 80767, "excluded": 465261},
+    {"step": "S2", "rule": "admittime/dischtime hợp lệ", "patients": 31423, "admissions": 80746, "excluded": 21},
+    {"step": "S3", "rule": "Tuổi ≥ 18", "patients": 31423, "admissions": 80746, "excluded": 0}
+  ],
+  "cohort_extra": {"hf_primary": 15105, "hf_secondary": 65641, "in_hospital_deaths": 4005},
+  "labels": [
+    {"task": "p1", "name": "Tử vong trong viện", "index_time": "admittime + 24h", "admissions": 73768, "patients": 30287,
+     "positives": 3588, "positive_rate": 0.0486,
+     "excluded": {"discharged_by_prediction_time": 6977, "died_by_prediction_time": "<10"}},
+    {"task": "p2", "name": "Tái nhập viện 30 ngày", "index_time": "dischtime", "admissions": 72666, "patients": 27870,
+     "positives": 17796, "positive_rate": 0.2449,
+     "excluded": {"died_in_hospital": 4005, "transfer_ama_or_hospice": 2321, "death_within_window_without_readmission": 1754}},
+    {"task": "p3", "name": "Tử vong 90 ngày sau xuất viện", "index_time": "dischtime", "admissions": 75285, "patients": 28855,
+     "positives": 7571, "positive_rate": 0.1006,
+     "excluded": {"died_in_hospital": 4005, "hospice": 1456}}
+  ],
+  "label_consistency_mismatches": 0,
+  "p1_deaths_outside_task": {"n": 417, "share_of_cohort_deaths": 0.104,
+                             "why": "chết hoặc ra viện trước giờ 24 nên không thuộc quần thể dự đoán P1"},
+  "gold_p1_v1": {"rows": 73768, "patients": 30287, "columns": 124, "features": 114, "positives": 3588,
+                 "feature_groups": {"demographic_admission": 6, "history": 16, "labs": 81, "vitals_icu": 11},
+                 "quality_status": "PASSED", "icu_24h": 16939, "no_vitals": 57089,
+                 "lab_measurements_in_window": 2388844, "vital_measurements_in_window": 2089983},
+  "gold_p2_p3": {"features": 146, "status": "mã nguồn xong, chờ chạy trên EC2"},
+  "by_year_group_p1": [
+    {"group": "2008 - 2010", "n": 34553, "positives": 1310, "rate": 0.0379},
+    {"group": "2011 - 2013", "n": 14062, "positives": 683, "rate": 0.0486},
+    {"group": "2014 - 2016", "n": 11267, "positives": 619, "rate": 0.0549},
+    {"group": "2017 - 2019", "n": 8769, "positives": 566, "rate": 0.0645},
+    {"group": "2020 - 2022", "n": 5117, "positives": 410, "rate": 0.0801}
+  ],
+  "missing_rate_p1": {"omr_egfr_last": 0.999, "lactate": 0.563, "albumin": 0.618, "troponin_t": 0.661,
+                      "ntprobnp": 0.689, "omr_bmi_last": 0.515, "omr_weight_last": 0.461, "omr_sbp_last": 0.411,
+                      "days_since_last_discharge": 0.252, "inr": 0.219, "magnesium": 0.111,
+                      "basic_labs_range": [0.035, 0.046], "vitals_icu": 0.774},
+  "data_issues_fixed_in_v1_1": [
+    {"issue": "troponin_t dạng \"<0.01\" bị coi là thiếu", "affected": 24073, "of": 77209, "share": 0.312},
+    {"issue": "inr dạng chữ bị bỏ", "affected": 1373, "of": 97040, "share": 0.014},
+    {"issue": "ntprobnp dạng chữ bị bỏ", "affected": 550, "of": 24039, "share": 0.023},
+    {"issue": "omr_egfr \">60\" bị bỏ → thiếu 99.9%", "affected": null, "of": null, "share": null}
+  ],
+  "split_p1": {"sha256": "584278c737fcbc884e88bb57ed1dc6f5f64fd0c211e645af16cd1e4532390ab5", "seed": 42,
+               "train": {"patients": 21200, "rows": 51631, "positives": 2511},
+               "validation": {"patients": 4543, "rows": 11129, "positives": 538},
+               "test": {"patients": 4544, "rows": 11008, "positives": 539}},
+  "benchmark_v1": {"task": "tổng hợp 20 xét nghiệm, cửa sổ −6h→24h, mẫu 1/5/10% bệnh nhân",
+                   "seconds": {"pandas": [4.6, 4.8, 5.4], "spark_local1": [85.7, 77.6, 77.1],
+                               "spark_local2": [45.5, 41.1, 41.1], "spark_local3": [31.4, 30.6, 29.3]},
+                   "speedup_local1_to_local3_at_10pct": 2.63,
+                   "limitation": "Thời gian Spark gần như không đổi theo cỡ mẫu → đo chi phí cố định; thay bằng data_spark.scaling"}
+}

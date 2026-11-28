@@ -1,7 +1,7 @@
 """GĐ2: kiểm tra bảng Spark và provenance của đặc trưng P1.
 
 Không collect dòng bệnh nhân. Context/lineage chỉ dùng kiểm tra, không ghép vào
-Gold xuất ra. Xem docs/stage2/quality_usage.md cho hợp đồng và lệnh chạy.
+Gold xuất ra. Xem results/data/quality_usage.md cho hợp đồng và lệnh chạy.
 """
 from __future__ import annotations
 

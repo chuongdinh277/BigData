@@ -189,7 +189,7 @@ def main(argv=None) -> None:
     ap.add_argument("--out", default=None, help="Mặc định <gold>/<task>/<version>")
     ap.add_argument("--sample-frac", type=float, default=None)
     ap.add_argument("--no-storetime-filter", action="store_true")
-    ap.add_argument("--report", default=None, help="Mặc định docs/stage2/features_<task>.md")
+    ap.add_argument("--report", default=None, help="Mặc định results/data/features_<task>.md")
     args = ap.parse_args(argv)
 
     processed = cfg["paths"].get("processed", "s3a://heartguard-mimic-group11/processed").rstrip("/")
@@ -197,7 +197,7 @@ def main(argv=None) -> None:
     root = args.root or cfg["paths"][args.fmt]
     out = args.out or (f"{gold_root}/{args.task}/{args.version}" if not args.sample_frac
                        else f"{gold_root}/{args.task}/_sample_{args.sample_frac}")
-    report = Path(args.report or REPO_ROOT / f"docs/stage2/features_{args.task}.md")
+    report = Path(args.report or REPO_ROOT / f"results/data/features_{args.task}.md")
     t0 = time.time()
     spark = get_spark(f"hg-features-{args.task}")
     cohort = spark.read.parquet(args.cohort or f"{processed}/cohort")

@@ -60,7 +60,7 @@ tử vong trong viện tại thời điểm 24 giờ sau khi bệnh nhân nhập
    Chạy toàn bộ và lưu vào đường dẫn kiểm chứng:
        python -m data_spark.features --fmt silver --version v1 \\
            --out s3a://heartguard-mimic-group11/gold/p1/_full_khoe_validation_v1 \\
-           --report docs/stage2/features_result_full.md
+           --report results/data/features_result_full.md
 
    Sử dụng bộ nhãn P1 chính thức:
        python -m data_spark.features --fmt silver \\
@@ -81,6 +81,7 @@ from __future__ import annotations
 import argparse
 
 import json
+import os
 
 import re
 
@@ -133,6 +134,34 @@ def _num(col):
     """Chuỗi số thuần -> double; chữ như '>60' -> NULL (không parse bừa)."""
 
     return F.when(col.rlike(r"^\s*-?\d+(\.\d+)?\s*$"), F.trim(col).cast("double"))
+
+
+# Giá trị bị chặn của máy xét nghiệm: "<0.01" (dưới ngưỡng phát hiện), ">60" (eGFR ngoại trú).
+# Đây là KẾT QUẢ CÓ THẬT, không phải dữ liệu thiếu. Trước Dataset v1.1, troponin T mất 31.2% phép đo
+# (24,073/77,209) vì valuenum rỗng ở các dòng "<0.01", và eGFR OMR thiếu 99.9% vì bỏ ">60".
+# Phân tích độ nhạy C6: bỏ hẳn phép đo có storetime NULL (mặc định giữ, xem D-014). Bật bằng
+# HG_DROP_NULL_STORETIME=1 hoặc cờ --drop-null-storetime của features.py.
+DROP_NULL_STORETIME = os.getenv("HG_DROP_NULL_STORETIME") == "1"
+
+CENSORED_RE = r"^\s*([<>]=?)\s*([0-9]*\.?[0-9]+)\s*$"
+
+
+def _censored_num(col):
+    """'<0.01' -> 0.01, '>60' -> 60.0 (lấy đúng ngưỡng của máy); chuỗi khác -> NULL."""
+
+    num = F.regexp_extract(col, CENSORED_RE, 2)
+    return F.when(num != "", num.cast("double"))
+
+
+def parse_censored(df: DataFrame, value_col: str = "value", num_col: str = "valuenum") -> DataFrame:
+    """Điền valuenum cho dòng có giá trị bị chặn; thêm cờ `censored` (1 = giá trị là ngưỡng máy)."""
+
+    if value_col not in df.columns:
+        return df.withColumn("censored", F.lit(0))
+    cens = F.col(num_col).isNull() & _censored_num(F.col(value_col)).isNotNull()
+    return df.withColumn("censored", cens.cast("int")).withColumn(
+        num_col, F.when(cens, _censored_num(F.col(value_col))).otherwise(F.col(num_col))
+    )
 
 
 # --------------------------------------------------------------------------- kiểm tra itemid
@@ -424,6 +453,8 @@ def omr_features(base: DataFrame, omr: DataFrame) -> DataFrame:
         "v",
         F.when(F.col("metric") == "sbp", _num(F.split(val, "/").getItem(0)))
         .when(F.col("metric") == "weight_kg", _num(val) * LBS_TO_KG)
+        # eGFR ">60" là kết quả bình thường bị chặn trên, không phải thiếu (D-019)
+        .when(F.col("metric") == "egfr", F.coalesce(_num(val), _censored_num(val)))
         .otherwise(_num(val)),
     )
 
@@ -459,17 +490,25 @@ def omr_features(base: DataFrame, omr: DataFrame) -> DataFrame:
 
 
 def lab_window(
-    labevents: DataFrame, base: DataFrame, strict_store: bool = True
+    labevents: DataFrame, base: DataFrame, strict_store: bool = True, censored: bool = True
 ) -> DataFrame:
-    """Mọi labevents trong [admittime-6h, prediction_time]; nối theo subject_id (lab ED trước nhập viện có thể không có hadm_id)."""
+    """Mọi labevents trong [admittime-6h, prediction_time]; nối theo subject_id (lab ED trước nhập viện có thể không có hadm_id).
+
+    censored=True (mặc định từ Dataset v1.1): đọc giá trị bị chặn "<0.01" thành 0.01, kèm cờ `censored`.
+    censored=False tái tạo đúng Dataset v1.
+    """
 
     b = F.broadcast(
         base.select("subject_id", "hadm_id", "admittime", "prediction_time")
     )
 
-    le = labevents.select(
-        "subject_id", "itemid", "charttime", "storetime", "valuenum", "valueuom"
-    )
+    cols = ["subject_id", "itemid", "charttime", "storetime", "valuenum", "valueuom"]
+    if "value" in labevents.columns:
+        cols.append("value")
+    le = labevents.select(*cols)
+    le = parse_censored(le) if censored else le.withColumn("censored", F.lit(0))
+    if "value" in le.columns:
+        le = le.drop("value")
 
     j = le.join(b, "subject_id").filter(
         (F.col("charttime") >= F.expr(f"admittime - INTERVAL {LAB_BEFORE_HOURS} HOURS"))
@@ -481,7 +520,7 @@ def lab_window(
     ):  # L5: kết quả phải có (storetime) tại mốc dự đoán; storetime NULL thì không kiểm được -> giữ
 
         j = j.filter(
-            F.col("storetime").isNull()
+            (F.col("storetime").isNull() & F.lit(not DROP_NULL_STORETIME))
             | (F.col("storetime") <= F.col("prediction_time"))
         )
 
@@ -597,6 +636,7 @@ def lab_features(lab_win: DataFrame, lab_cfg: dict, min_unit_share: float = 0.95
             F.sum("f_nonnum").alias("nonnum"),
             F.sum("f_unit").alias("bad_unit"),
             F.sum("f_range").alias("out_range"),
+            F.sum("censored").alias("censored") if "censored" in tagged.columns else F.lit(0).alias("censored"),
         )
         .collect()
     )
@@ -606,6 +646,7 @@ def lab_features(lab_win: DataFrame, lab_cfg: dict, min_unit_share: float = 0.95
             "nonnum": r["nonnum"],
             "bad_unit": r["bad_unit"],
             "out_range": r["out_range"],
+            "censored": r["censored"] or 0,
             "unit": share_info.get(r["lab"], ("", 0))[0],
             "unit_share": share_info.get(r["lab"], ("", 0))[1],
         }
@@ -666,7 +707,7 @@ def vitals_features(
     if strict_store:
 
         j = j.filter(
-            F.col("storetime").isNull()
+            (F.col("storetime").isNull() & F.lit(not DROP_NULL_STORETIME))
             | (F.col("storetime") <= F.col("prediction_time"))
         )
 
@@ -848,14 +889,14 @@ def write_report(
         "",
         "## Loại bỏ theo từng xét nghiệm (cửa sổ -6h → 24h)",
         "",
-        "| Lab | Số phép đo | Không phải số | Sai đơn vị | Ngoài khoảng | Đơn vị chủ đạo | Tỷ lệ đơn vị |",
-        "|---|---:|---:|---:|---:|---|---:|",
+        "| Lab | Số phép đo | Giá trị bị chặn đã đọc (<x, >x) | Không phải số | Sai đơn vị | Ngoài khoảng | Đơn vị chủ đạo | Tỷ lệ đơn vị |",
+        "|---|---:|---:|---:|---:|---:|---|---:|",
     ]
 
     for lab, s in lab_stats.items():
 
         L.append(
-            f"| {lab} | {s['n']:,} | {s['nonnum']:,} | {s['bad_unit']:,} | {s['out_range']:,} | {s['unit'] or '—'} | {s['unit_share']:.1%} |"
+            f"| {lab} | {s['n']:,} | {s.get('censored', 0):,} | {s['nonnum']:,} | {s['bad_unit']:,} | {s['out_range']:,} | {s['unit'] or '—'} | {s['unit_share']:.1%} |"
         )
 
     L += [
@@ -926,16 +967,32 @@ def main() -> None:
     )
 
     ap.add_argument(
+        "--drop-null-storetime",
+        action="store_true",
+        help="Phân tích độ nhạy C6: bỏ phép đo có storetime NULL (ghi Gold ra đường dẫn riêng)",
+    )
+
+    ap.add_argument(
+        "--no-censored-parse",
+        action="store_true",
+        help="Không đọc giá trị bị chặn '<0.01'/'>60' (tái tạo đúng Dataset v1)",
+    )
+
+    ap.add_argument(
         "--skip-verify",
         action="store_true",
         help="Bỏ qua đối chiếu itemid với d_labitems/d_items",
     )
 
     ap.add_argument(
-        "--report", default=str(REPO_ROOT / "docs/stage2/features_result.md")
+        "--report", default=str(REPO_ROOT / "results/data/features_result.md")
     )
 
     args = ap.parse_args()
+
+    if args.drop_null_storetime:
+        global DROP_NULL_STORETIME
+        DROP_NULL_STORETIME = True
 
     root = args.root or cfg["paths"][args.fmt]
 
@@ -999,7 +1056,7 @@ def main() -> None:
 
     omr = omr_features(base, rt("omr"))
 
-    lw = lab_window(rt("labevents"), base, strict).cache()
+    lw = lab_window(rt("labevents"), base, strict, censored=not args.no_censored_parse).cache()
 
     nlab = lw.groupBy("hadm_id").agg(F.count(F.lit(1)).alias("n_lab_tests_24h"))
 

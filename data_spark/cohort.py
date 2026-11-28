@@ -112,7 +112,7 @@ def main() -> None:
                     help="Thư mục gốc dữ liệu; mặc định lấy từ configs/data.yaml theo --fmt")
     ap.add_argument("--out", default=None,
                     help="Nơi ghi cohort Parquet; mặc định <paths.processed>/cohort")
-    ap.add_argument("--report", default=str(REPO_ROOT / "docs/stage2/cohort_result.md"))
+    ap.add_argument("--report", default=str(REPO_ROOT / "results/data/cohort_result.md"))
     args = ap.parse_args()
 
     root = args.root or cfg["paths"][args.fmt]

@@ -6,7 +6,7 @@ Thứ tự chạy (mỗi bước là một tiến trình riêng, dùng đúng CL
     labels   (Hà)     python -m data_spark.labels        → <processed>/labels/p1   (nếu module đã có)
     features (Khoẻ)   python -m data_spark.features      → <gold>/p1/<version>
     validate (Chưởng) đọc Gold + cohort, chạy quality (Chiến) + kiểm tra chéo
-                      → manifest.json (S3, cạnh Gold) + docs/stage2/dataset_v1.md
+                      → manifest.json (S3, cạnh Gold) + results/data/dataset_v1.md
 
 Nhãn P1: nếu có parquet nhãn của Hà (--labels) thì features dùng nhãn đó; nếu không,
 features tạm dùng hospital_expire_flag và manifest ghi rõ `label_source` là tạm thời.
@@ -286,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-storetime-filter", action="store_true")
     ap.add_argument("--expect-rows", type=int, default=None, help="Số dòng kỳ vọng, vd 73768")
     ap.add_argument("--expect-positives", type=int, default=None, help="Số ca dương kỳ vọng, vd 3588")
-    ap.add_argument("--report", default=str(REPO_ROOT / "docs/stage2/dataset_v1.md"))
+    ap.add_argument("--report", default=str(REPO_ROOT / "results/data/dataset_v1.md"))
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
 
@@ -300,8 +300,8 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
         return 0
     labels = paths["labels_default"] if args.labels == "auto" else args.labels
-    feature_report = str(REPO_ROOT / ("docs/stage2/features_result_sample.md" if args.sample_frac
-                                      else "docs/stage2/features_result_full.md"))
+    feature_report = str(REPO_ROOT / ("results/data/features_result_sample.md" if args.sample_frac
+                                      else "results/data/features_result_full.md"))
     steps_log: list[dict] = []
     t_all = time.time()
 
@@ -377,6 +377,12 @@ def main(argv: list[str] | None = None) -> int:
         report_path = Path(args.report)
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(render_markdown(manifest, threshold), encoding="utf-8")
+        # Bản JSON tổng hợp (đã che ô < ngưỡng) cho cổng quản trị: GET /api/v1/admin/data
+        public = json.loads(json.dumps(manifest))
+        public["summary"]["by_year_group"] = [{**r, "n": mask(r["n"], threshold), "positives": mask(r["positives"], threshold)}
+                                              for r in public["summary"]["by_year_group"]]
+        (report_path.parent / f"p1_dataset_{manifest['data_version']}.json").write_text(
+            json.dumps(public, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"[{manifest['status']}] {summary['rows']:,} dòng · {summary['positives']:,} ca dương "
               f"({summary['positive_rate']:.2%}) → {paths['gold_p1']}")
         print(f"[OK] manifest → {paths['manifest']} · báo cáo → {report_path}")

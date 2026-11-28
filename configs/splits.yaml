@@ -1,0 +1,21 @@
+# Bản chia tập ĐÃ KHÓA theo bài toán (D-013, D-017). Mọi thí nghiệm phải dùng đúng manifest này;
+# ml.common.split.load_manifest kiểm tra sha256 khi nạp. Manifest chứa subject_id nên CHỈ nằm trên S3.
+p1:
+  manifest: s3://heartguard-mimic-group11/splits/p1/v1/split_manifest.json
+  sha256: 584278c737fcbc884e88bb57ed1dc6f5f64fd0c211e645af16cd1e4532390ab5
+  ratios: [0.70, 0.15, 0.15]          # train / validation / test theo bệnh nhân
+  seed: 42
+  counts:                              # đã kiểm trên dữ liệu thật (Gold P1 v1)
+    train: {patients: 21200, rows: 51631, positives: 2511}
+    validation: {patients: 4543, rows: 11129, positives: 538}
+    test: {patients: 4544, rows: 11008, positives: 539}
+p2:
+  manifest: s3://heartguard-mimic-group11/splits/p2/v1/split_manifest.json
+  sha256: null                         # điền sau khi chạy `make split TASK=p2` trên EC2
+  ratios: [0.70, 0.15, 0.15]
+  seed: 42
+p3:
+  manifest: s3://heartguard-mimic-group11/splits/p3/v1/split_manifest.json
+  sha256: null                         # điền sau khi chạy `make split TASK=p3` trên EC2
+  ratios: [0.70, 0.15, 0.15]
+  seed: 42

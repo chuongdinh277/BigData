@@ -96,7 +96,7 @@ Module thuộc Giai đoạn 2 của dự án HeartGuard AI, chịu trách nhiệ
        reports/benchmark/bench_final.png
 
    Tài liệu phân tích:
-       docs/stage2/benchmark.md
+       results/data/benchmark.md
 
 8. CÁCH CHẠY
 

@@ -113,7 +113,7 @@ def main() -> None:
     base.cache()
 
     # --- 2. Attrition cohort chung ---------------------------------------------------
-    n_all = base.count()
+    base.count()  # nạp cache trước khi lọc nhiều lần
     s1 = base.join(hf_adm, "hadm_id", "inner")
     s2 = s1.where(F.col("admittime").isNotNull() & F.col("dischtime").isNotNull()
                   & (F.col("dischtime") > F.col("admittime")))

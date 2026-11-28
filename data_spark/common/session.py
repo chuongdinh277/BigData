@@ -8,6 +8,10 @@ Biến môi trường:
   HG_DRIVER_MEMORY  mặc định "8g"
   HG_HADOOP_AWS     phiên bản hadoop-aws khớp Hadoop của Spark (Spark 3.5.x → 3.3.4)
   HG_LOCAL          "1" để chạy hoàn toàn local, không S3
+  HG_SPARK_CONF     cấu hình thêm "k1=v1,k2=v2" — dùng cho cụm standalone (spark.executor.memory,
+                    spark.executor.cores, spark.cores.max) và thí nghiệm ablation
+                    (spark.sql.adaptive.enabled=false, spark.sql.autoBroadcastJoinThreshold=-1)
+  HG_EVENT_LOG      thư mục event log để xem lại Spark UI qua History Server (vd file:///tmp/spark-events)
 """
 from __future__ import annotations
 
@@ -37,6 +41,11 @@ def get_spark(app_name: str = "heartguard") -> SparkSession:
             )
             .config("spark.hadoop.fs.s3a.endpoint.region", os.getenv("AWS_REGION", "us-east-1"))
         )
+    if os.getenv("HG_EVENT_LOG"):
+        builder = builder.config("spark.eventLog.enabled", "true").config("spark.eventLog.dir", os.environ["HG_EVENT_LOG"])
+    for kv in filter(None, os.getenv("HG_SPARK_CONF", "").split(",")):
+        k, _, v = kv.partition("=")
+        builder = builder.config(k.strip(), v.strip())
     spark = builder.getOrCreate()
     spark.sparkContext.setLogLevel(os.getenv("HG_LOG_LEVEL", "WARN"))
     return spark

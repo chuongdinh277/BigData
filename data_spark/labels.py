@@ -442,7 +442,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--report",
-        default=str(REPO_ROOT / "docs/stage2/labels_result.md"),
+        default=str(REPO_ROOT / "results/data/labels_result.md"),
         help="Báo cáo Markdown chỉ gồm thống kê tổng hợp",
     )
     args = parser.parse_args()
