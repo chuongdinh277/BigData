@@ -33,6 +33,12 @@ def add_subgroup_columns(df: pd.DataFrame, missing_frac: pd.Series | None = None
         out["suy_tim_chinh"] = df["hf_primary"].map({1: "Chẩn đoán chính", 0: "Chẩn đoán phụ"})
     if "ntprobnp_missing" in df:
         out["co_ntprobnp"] = df["ntprobnp_missing"].map({0: "Có NT-proBNP", 1: "Không có"})
+    # Nhóm GIAO NHAU: chênh lệch thường ẩn ở giao điểm hai thuộc tính (vd nữ cao tuổi)
+    if "gioi_tinh" in out and "nhom_tuoi" in out:
+        out["gioi_x_tuoi"] = out["gioi_tinh"] + " × " + out["nhom_tuoi"]
+    icu = out.get("icu_24h", out.get("icu_trong_dot"))
+    if "bao_hiem" in out and icu is not None:
+        out["bao_hiem_x_icu"] = out["bao_hiem"] + " × " + icu.astype(str)
     if missing_frac is not None:
         out["muc_thieu_du_lieu"] = pd.qcut(missing_frac.rank(method="first"), 3,
                                            labels=["Thiếu ít", "Thiếu vừa", "Thiếu nhiều"]).astype(str)
@@ -99,3 +105,23 @@ def fairness_gaps(table: pd.DataFrame) -> pd.DataFrame:
                      "oe_ratio_min": g["oe_ratio"].min(), "oe_ratio_max": g["oe_ratio"].max(),
                      "worst_roc_group": g.loc[g["roc_auc"].idxmin(), "group"]})
     return pd.DataFrame(rows)
+
+
+# Vì sao mỗi trục là "relevant" (đề: "relevant patient subgroups"). Dùng trong báo cáo.
+RELEVANCE = {
+    "gioi_tinh": "Công bằng: triệu chứng và điều trị suy tim khác nhau giữa nam và nữ",
+    "nhom_tuoi": "Lâm sàng: tuổi là yếu tố tiên lượng mạnh nhất; ≥80 tuổi ít có trong thử nghiệm lâm sàng",
+    "giai_doan": "Drift: phác đồ, hệ mã ICD (2015), COVID-19 (2020–2022) thay đổi theo thời gian",
+    "chung_toc": "Công bằng: chênh lệch tiếp cận y tế; GWTG-HF có biến chủng tộc",
+    "bao_hiem": "Công bằng: proxy kinh tế – xã hội (Medicaid)",
+    "phien_ban_icd": "Dữ liệu: bệnh nền mã hóa ICD-9 và ICD-10 khác nhau",
+    "loai_nhap_vien": "Lâm sàng: nhập cấp cứu và nhập theo kế hoạch có nguy cơ nền khác nhau",
+    "icu_24h": "Dữ liệu: sinh hiệu chỉ có ở ca ICU, mô hình có thể dựa vào việc có/không có sinh hiệu",
+    "icu_trong_dot": "Dữ liệu: như trên cho bài toán lúc xuất viện",
+    "noi_xuat_vien": "Lâm sàng: ra viện về cơ sở chăm sóc khác có nguy cơ tái nhập/tử vong cao hơn",
+    "suy_tim_chinh": "Cohort: suy tim là lý do nhập viện chính hay chỉ là bệnh kèm",
+    "co_ntprobnp": "Dữ liệu: dấu ấn sinh học quan trọng nhất của suy tim nhưng thiếu 68.9%",
+    "muc_thieu_du_lieu": "Độ tin cậy: hiệu năng ở ca thiếu nhiều dữ liệu",
+    "gioi_x_tuoi": "Giao nhau: chênh lệch ẩn ở giao điểm giới × tuổi",
+    "bao_hiem_x_icu": "Giao nhau: kinh tế – xã hội × mức độ nặng",
+}

@@ -146,3 +146,29 @@ def bootstrap_ci(y, p, groups, threshold, n_boot=1000, seed=42, alpha=0.05, metr
         out[m] = ([float(np.quantile(v, alpha / 2)), float(np.quantile(v, 1 - alpha / 2))]
                   if len(v) else [float("nan"), float("nan")])
     return out
+
+
+def paired_bootstrap_diff(y, p_a, p_b, groups, n_boot=1000, seed=42, alpha=0.05) -> dict:
+    """CI của HIỆU chỉ số giữa hai mô hình trên CÙNG mẫu bootstrap (lấy mẫu lại theo bệnh nhân).
+    Trả ΔPR-AUC, ΔROC-AUC, ΔBrier (a − b). CI chứa 0 ⇒ hai mô hình không khác nhau có ý nghĩa."""
+    y = np.asarray(y).astype(int)
+    p_a, p_b = np.asarray(p_a, float), np.asarray(p_b, float)
+    _, gcode = np.unique(np.asarray(groups), return_inverse=True)
+    G = gcode.max() + 1
+    rng = np.random.default_rng(seed)
+    d = {"pr_auc": [], "roc_auc": [], "brier": []}
+    for _ in range(n_boot):
+        w = rng.multinomial(G, np.full(G, 1.0 / G))[gcode].astype(float)
+        if len(np.unique(y[w > 0])) < 2:
+            continue
+        a, b = discrimination(y, p_a, w), discrimination(y, p_b, w)
+        for k in d:
+            d[k].append(a[k] - b[k])
+    pa, pb = discrimination(y, p_a), discrimination(y, p_b)
+    out = {}
+    for k, v in d.items():
+        v = np.asarray(v, float)
+        lo, hi = float(np.quantile(v, alpha / 2)), float(np.quantile(v, 1 - alpha / 2))
+        out[k] = {"diff": pa[k] - pb[k], "ci95": [lo, hi], "significant": not (lo <= 0 <= hi),
+                  "p_two_sided": float(min(1.0, 2 * min((v <= 0).mean(), (v >= 0).mean())))}
+    return out

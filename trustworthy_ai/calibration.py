@@ -73,7 +73,7 @@ def select_calibrator(p_oof, y, folds, methods=METHODS) -> tuple[str, dict]:
 
 
 def f1_threshold(y, p) -> float:
-    from experiments.common.metrics import choose_threshold
+    from ml.common.metrics import choose_threshold
     return choose_threshold(y, p)
 
 

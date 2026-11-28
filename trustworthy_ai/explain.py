@@ -114,7 +114,7 @@ def direction_summary(shap_df: pd.DataFrame, X: pd.DataFrame, features: list[str
         if f not in X.columns or not pd.api.types.is_numeric_dtype(X[f]):
             continue
         m = X[f].notna()
-        if m.sum() < 30 or X.loc[m, f].nunique() < 2:
+        if m.sum() < 30 or X.loc[m, f].nunique() < 2 or shap_df.loc[m, f].nunique() < 2:
             continue
         rho = pd.Series(X.loc[m, f].to_numpy()).corr(pd.Series(shap_df.loc[m, f].to_numpy()), method="spearman")
         rows.append({"feature": f, "spearman_value_vs_shap": float(rho),
@@ -136,3 +136,85 @@ def importance_stability(importances: list[pd.DataFrame], top_k: int = 20) -> di
     return {"spearman_mean": float(np.mean(rhos)) if rhos else float("nan"),
             "spearman_min": float(np.min(rhos)) if rhos else float("nan"),
             f"jaccard_top{top_k}_mean": float(np.mean(jacc)) if jacc else float("nan")}
+
+
+# ----------------------------------------------------------------------------------------------
+# Chất lượng của lời giải thích: trung thực (faithfulness) và hợp lý lâm sàng (plausibility)
+# ----------------------------------------------------------------------------------------------
+def deletion_curve(pipeline, X: pd.DataFrame, shap_df: pd.DataFrame, ks=(1, 2, 3, 5, 10, 20),
+                   n_random: int = 5, seed: int = 42) -> pd.DataFrame:
+    """Che (đặt NULL) k đặc trưng có |SHAP| lớn nhất của TỪNG ca, đo thay đổi logit trung bình;
+    so với che k đặc trưng ngẫu nhiên. SHAP trung thực ⇔ đường SHAP cao hơn rõ đường ngẫu nhiên.
+    Cờ `_missing` không bị che trực tiếp (là hệ quả của việc thiếu, không phải giá trị đo)."""
+    from .evaluation import logit
+
+    rng = np.random.default_rng(seed)
+    cand = [c for c in X.columns if not c.endswith("_missing") and pd.api.types.is_numeric_dtype(X[c])]
+    S = shap_df[cand].abs().to_numpy()
+    base = logit(pipeline.predict_proba(X)[:, 1])
+    rows = []
+    for k in ks:
+        k = min(k, len(cand))
+        top_idx = np.argsort(-S, axis=1)[:, :k]
+        Xs = X.copy()
+        arr = Xs[cand].to_numpy(dtype=float, copy=True)
+        np.put_along_axis(arr, top_idx, np.nan, axis=1)
+        Xs[cand] = arr
+        d_shap = float(np.mean(np.abs(logit(pipeline.predict_proba(Xs)[:, 1]) - base)))
+        d_rand = []
+        for _ in range(n_random):
+            Xr = X.copy()
+            arr = Xr[cand].to_numpy(dtype=float, copy=True)
+            ridx = np.argsort(rng.random(arr.shape), axis=1)[:, :k]
+            np.put_along_axis(arr, ridx, np.nan, axis=1)
+            Xr[cand] = arr
+            d_rand.append(float(np.mean(np.abs(logit(pipeline.predict_proba(Xr)[:, 1]) - base))))
+        rows.append({"k": k, "mean_abs_logit_change_shap_order": d_shap,
+                     "mean_abs_logit_change_random": float(np.mean(d_rand)),
+                     "ratio_shap_vs_random": d_shap / max(float(np.mean(d_rand)), 1e-9)})
+    return pd.DataFrame(rows)
+
+
+# Chiều tác động KỲ VỌNG theo y văn suy tim (+1: giá trị cao → nguy cơ cao; −1: giá trị cao → nguy cơ thấp).
+# Dùng cho cả 3 bài toán; với P2 (tái nhập) một số chiều có thể yếu hơn — khi đó báo cáo "không đơn điệu".
+EXPECTED_DIRECTION = {
+    "age": (+1, "Tuổi cao"),
+    "bun": (+1, "Hội chứng tim–thận"),
+    "creatinine": (+1, "Suy giảm chức năng thận"),
+    "sodium": (-1, "Hạ natri máu là yếu tố tiên lượng xấu"),
+    "lactate": (+1, "Giảm tưới máu mô"),
+    "sbp": (-1, "Huyết áp tâm thu thấp, nguy cơ sốc tim"),
+    "albumin": (-1, "Suy dinh dưỡng, viêm"),
+    "ntprobnp": (+1, "Căng giãn cơ tim"),
+    "troponin_t": (+1, "Tổn thương cơ tim"),
+    "rdw": (+1, "Yếu tố tiên lượng đã ghi nhận trong suy tim"),
+    "hr": (+1, "Nhịp nhanh"),
+    "anion_gap": (+1, "Toan chuyển hóa"),
+    "bicarbonate": (-1, "Toan chuyển hóa"),
+    "hemoglobin": (-1, "Thiếu máu"),
+    "wbc": (+1, "Viêm, nhiễm trùng"),
+}
+
+
+def _concept(feature: str) -> str | None:
+    for k in sorted(EXPECTED_DIRECTION, key=len, reverse=True):
+        if feature == k or feature.startswith(k + "_"):
+            return k
+    return None
+
+
+def clinical_plausibility(direction: pd.DataFrame) -> pd.DataFrame:
+    """Đối chiếu chiều tác động học được (Spearman giá trị ~ SHAP) với chiều kỳ vọng lâm sàng."""
+    rows = []
+    for _, r in direction.iterrows():
+        if r["feature"].endswith("_missing"):
+            continue  # cờ thiếu không có "chiều kỳ vọng" theo y văn
+        k = _concept(r["feature"])
+        if k is None:
+            continue
+        exp, why = EXPECTED_DIRECTION[k]
+        rho = r["spearman_value_vs_shap"]
+        verdict = "không đơn điệu" if abs(rho) <= 0.2 else ("đúng chiều" if np.sign(rho) == exp else "NGƯỢC CHIỀU")
+        rows.append({"feature": r["feature"], "concept": k, "expected": "↑ nguy cơ" if exp > 0 else "↓ nguy cơ",
+                     "spearman_value_vs_shap": float(rho), "verdict": verdict, "rationale": why})
+    return pd.DataFrame(rows)

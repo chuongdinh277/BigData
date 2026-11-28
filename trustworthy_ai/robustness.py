@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from experiments.common.config import SCHEMA
+from ml.common.config import SCHEMA
 
 from .evaluation import calibration_stats, discrimination
 

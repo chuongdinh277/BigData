@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from experiments.common.config import LABEL, REPO_ROOT
-from experiments.common.data import feature_columns
-from experiments.common.runner import make_preprocessor, split_feature_types
+from ml.common.config import LABEL, REPO_ROOT
+from ml.common.data import feature_columns
+from ml.common.runner import make_preprocessor, split_feature_types
 from trustworthy_ai.calibration import Calibrator, choose_thresholds, crossfit_calibrate, risk_level, select_calibrator
 from trustworthy_ai.drift import DriftReference, psi
 from trustworthy_ai.evaluation import bootstrap_ci, calibration_stats, full_metrics, logit
@@ -144,13 +144,13 @@ def test_stage5_end_to_end_bundle_and_predict(gold, tmp_path):
     gpath = tmp_path / "gold.csv"
     gold.to_csv(gpath, index=False)
     spath = tmp_path / "split.json"
-    subprocess.run([sys.executable, "-m", "experiments.common.split", "--gold", str(gpath), "--out", str(spath)],
+    subprocess.run([sys.executable, "-m", "ml.common.split", "--gold", str(gpath), "--out", str(spath)],
                    check=True, capture_output=True, cwd=REPO_ROOT)
-    from experiments.stage5 import run_stage5
+    from ml.trust import run as run_stage5
     out = tmp_path / "run"
     assert run_stage5.main(["--gold", str(gpath), "--split", str(spath), "--synthetic", "--quick", "--open-test",
                             "--folds", "3", "--candidates", "XGBoost", "LogisticRegression", "--out", str(out)]) == 0
-    assert (out / "docs/stage5_report.md").exists() and (out / "test_lock.json").exists()
+    assert (out / "report/report.md").exists() and (out / "test_lock.json").exists()
     with pytest.raises(SystemExit):                                # test chỉ được mở một lần
         run_stage5.main(["--gold", str(gpath), "--split", str(spath), "--synthetic", "--quick", "--open-test",
                          "--out", str(out)])
@@ -210,15 +210,15 @@ def test_stage5_runs_for_discharge_tasks(tmp_path, task, label):
                                        capture_output=True, text=True, encoding="utf-8")
     r = run(str(REPO_ROOT / "tools/make_synthetic_gold.py"), "--task", task, "--rows", "2500", "--out", str(gpath))
     assert r.returncode == 0, r.stderr
-    assert run("-m", "experiments.common.split", "--gold", str(gpath), "--out", str(spath)).returncode == 0
-    r = run("-m", "experiments.stage5.run_stage5", "--gold", str(gpath), "--split", str(spath), "--synthetic",
+    assert run("-m", "ml.common.split", "--gold", str(gpath), "--out", str(spath)).returncode == 0
+    r = run("-m", "ml.trust.run", "--gold", str(gpath), "--split", str(spath), "--synthetic",
             "--quick", "--open-test", "--folds", "3", "--candidates", "XGBoost", "LogisticRegression",
             "--out", str(out))
     assert r.returncode == 0, r.stderr[-3000:]
     R = json.loads((out / "stage5_results.json").read_text(encoding="utf-8"))
     assert R["task"] == task and R["label"] == label and R["n_features"] == 146
     assert f"/{task}/" in R["bundle_dir"].replace("\\", "/") and "test" in R
-    report = (out / "docs/stage5_report.md").read_text(encoding="utf-8")
+    report = (out / "report/report.md").read_text(encoding="utf-8")
     assert ("tái nhập viện" if task == "p2" else "tử vong 90 ngày") in report
     assert "icu_trong_dot" in report and "noi_xuat_vien" in report
     shutil.rmtree(R["bundle_dir"])
