@@ -1,0 +1,31 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListProjectBucket",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+      "Resource": "arn:aws:s3:::heartguard-mimic-group11"
+    },
+    {
+      "Sid": "ReadBronzeOnly",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": "arn:aws:s3:::heartguard-mimic-group11/bronze/*"
+    },
+    {
+      "Sid": "ReadWriteDerivedLayers",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"],
+      "Resource": [
+        "arn:aws:s3:::heartguard-mimic-group11/silver/*",
+        "arn:aws:s3:::heartguard-mimic-group11/processed/*",
+        "arn:aws:s3:::heartguard-mimic-group11/gold/*",
+        "arn:aws:s3:::heartguard-mimic-group11/splits/*",
+        "arn:aws:s3:::heartguard-mimic-group11/reports/*",
+        "arn:aws:s3:::heartguard-mimic-group11/model-artifacts/*",
+        "arn:aws:s3:::heartguard-mimic-group11/experiments/*"
+      ]
+    }
+  ]
+}

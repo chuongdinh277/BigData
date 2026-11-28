@@ -1,7 +1,9 @@
 name: ci
 on: [push, pull_request]
+
 jobs:
-  checks:
+  python:
+    name: Spark + ML + API (dữ liệu giả)
     runs-on: ubuntu-latest
     env:
       HG_LOCAL: "1"
@@ -9,26 +11,47 @@ jobs:
       HG_SHUFFLE_PARTITIONS: "4"
       HG_DRIVER_MEMORY: "2g"
       SPARK_LOCAL_IP: "127.0.0.1"
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: "3.11"}
+        with: {python-version: "3.12", cache: pip}
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: "17"}
-      - run: pip install -r requirements-quality.txt
-      - name: Chặn dữ liệu thật bị commit nhầm
+      - run: pip install -r requirements.txt ruff
+      - name: Kiểm tra code sạch (ruff)
+        run: ruff check .
+      - name: Chặn dữ liệu thật bị commit nhầm (DUA PhysioNet)
         run: |
-          if git ls-files | grep -Ei '\.(csv\.gz|parquet)$' | grep -v '^sample_data/'; then
-            echo "Phát hiện file dữ liệu ngoài sample_data/ — xóa khỏi commit!"; exit 1; fi
-      - run: python -m py_compile data_spark/*.py data_spark/common/*.py tools/*.py trustworthy_ai/*.py experiments/stage5/*.py
-      - run: python tools/make_synthetic_gold.py --rows 200 --out /tmp/gold.csv
-      - run: python -m pytest -q tests --junitxml=reports/quality/pytest.xml
-      - name: Verify synthetic quality workflow and rejection of bad inputs
+          if git ls-files | grep -Ei '\.(csv\.gz|parquet|joblib|db)$' | grep -v '^sample_data/'; then
+            echo "Phát hiện file dữ liệu/mô hình ngoài sample_data/ — xóa khỏi commit!"; exit 1; fi
+      - run: python -m compileall -q data_spark ml trustworthy_ai backend tools
+      - name: Test (Spark ETL, chống rò rỉ, ML, độ tin cậy, API)
+        run: python -m pytest -q tests --junitxml=reports/quality/pytest.xml
+      - name: Quy trình kiểm tra chất lượng trên dữ liệu giả + từ chối đầu vào sai
         run: python tools/verify_quality_demo.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: quality-evidence
-          path: |
-            reports/quality/
-            reports/stage1_fake/
+          path: reports/
+
+  web:
+    name: Frontend (typecheck + build)
+    runs-on: ubuntu-latest
+    defaults: {run: {working-directory: frontend}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: "20", cache: npm, cache-dependency-path: frontend/package-lock.json}
+      - run: npm ci
+      - run: npm run build
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    needs: [python, web]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f backend/Dockerfile -t heartguard-api .
+      - run: docker build -t heartguard-web frontend

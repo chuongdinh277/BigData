@@ -1,0 +1,64 @@
+# HeartGuard AI — ứng dụng (PostgreSQL + FastAPI + React/nginx) trên một EC2.
+#
+#   cp .env.example .env   # sửa POSTGRES_PASSWORD, MODEL_SOURCE...
+#   docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
+#   mở http://<EC2-public-IP>:8080   (Security Group chỉ mở cổng này cho IP của nhóm)
+#
+# Mô hình: MODEL_SOURCE=s3 → API tải gói từ s3://.../model-artifacts/<task>/<version>/ bằng IAM Role của EC2.
+#          MODEL_SOURCE=local → dùng gói trong ../artifacts/models (vd gói demo từ tools/make_demo_bundles.py).
+name: heartguard
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: heartguard
+      POSTGRES_USER: heartguard
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Đặt POSTGRES_PASSWORD trong .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heartguard -d heartguard"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # Không mở cổng DB ra ngoài: chỉ api trong mạng nội bộ truy cập được
+
+  api:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://heartguard:${POSTGRES_PASSWORD}@db:5432/heartguard
+      MODEL_SOURCE: ${MODEL_SOURCE:-local}
+      MODEL_DIR: /app/artifacts/models
+      MODEL_S3_PREFIX: ${MODEL_S3_PREFIX:-s3://heartguard-mimic-group11/model-artifacts}
+      MODEL_VERSION_P1: ${MODEL_VERSION_P1:-}
+      MODEL_VERSION_P2: ${MODEL_VERSION_P2:-}
+      MODEL_VERSION_P3: ${MODEL_VERSION_P3:-}
+      TASKS: ${TASKS:-p1,p2,p3}
+      RESULTS_DIR: /app/results/trust
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+    volumes:
+      - ../artifacts:/app/artifacts            # gói mô hình (local) + cache gói tải từ S3
+      - ../results:/app/results:ro             # báo cáo đánh giá (chỉ số liệu tổng hợp)
+    expose:
+      - "8000"
+
+  web:
+    build:
+      context: ../frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  pgdata:
