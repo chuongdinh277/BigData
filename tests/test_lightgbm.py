@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from experiments.chien.run_lightgbm import (
+from ml.models.lightgbm_model import (
     CASE_DEFAULT,
     CASE_OPTUNA,
     CASE_WEIGHTED,
@@ -18,9 +18,9 @@ from experiments.chien.run_lightgbm import (
     validate_gold,
     validate_manifest,
 )
-from experiments.common.config import REPO_ROOT, RESULT_COLUMNS
-from experiments.common.data import load_gold
-from experiments.common.split import load_manifest, make_split, save_manifest
+from ml.common.config import REPO_ROOT, RESULT_COLUMNS
+from ml.common.data import load_gold
+from ml.common.split import load_manifest, make_split, save_manifest
 
 
 @pytest.fixture(scope="module")

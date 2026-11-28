@@ -4,7 +4,6 @@ import subprocess
 import sys
 
 import pandas as pd
-import pytest
 
 from data_spark import pipeline_runner as pr
 from data_spark.common.io import REPO_ROOT, load_yaml

@@ -1,0 +1,7 @@
+# Môi trường phát triển: đầy đủ + Jupyter để chạy notebooks/
+-r requirements.txt
+jupyterlab>=4.2
+ipykernel>=6.29
+nbconvert>=7.16
+nbformat>=5.10
+ruff>=0.6

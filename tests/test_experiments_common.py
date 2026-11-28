@@ -4,16 +4,15 @@ import subprocess
 import sys
 
 import numpy as np
-import pandas as pd
 import pytest
 
-from experiments.common.config import REPO_ROOT
-from experiments.common import config
-from experiments.common.data import feature_columns, load_gold
-from experiments.common.metrics import choose_threshold, evaluate
-from experiments.common.results import write_result
-from experiments.common.runner import baseline_pipeline, run_case
-from experiments.common.split import apply_split, load_manifest, make_split, save_manifest
+from ml.common.config import REPO_ROOT
+from ml.common import config
+from ml.common.data import feature_columns, load_gold
+from ml.common.metrics import choose_threshold, evaluate
+from ml.common.results import write_result
+from ml.common.runner import baseline_pipeline, run_case
+from ml.common.split import apply_split, load_manifest, make_split, save_manifest
 
 
 @pytest.fixture(scope="module")

@@ -7,16 +7,26 @@
 *.feather
 *.pkl
 *.joblib
-data/
+/data/
 mimic*/
-reports/
-artifacts/models/
 mlruns/
 # dữ liệu giả thì được phép (tạo lại bằng tools/)
 !sample_data/
 !sample_data/**
 sample_data/mimic_fake/
 sample_data/quality_fixture*/
+
+# ---- split_manifest chứa subject_id của MIMIC: không bao giờ commit ----
+**/split_manifest*.json
+
+# ---- Số liệu TỔNG HỢP được commit (không có dòng bệnh nhân, ô < 10 đã che) ----
+!results/**/*.csv
+results/benchmark/_features_*.md
+
+# ---- Đầu ra cục bộ (gói mô hình, báo cáo trung gian, log chạy) ----
+artifacts/
+reports/
+*.db
 
 # ---- Bí mật ----
 .env
@@ -27,25 +37,28 @@ sample_data/quality_fixture*/
 credentials*
 .aws/
 
-# ---- Python / Node / IDE ----
+# ---- Python / Node / Notebook ----
 __pycache__/
 *.py[cod]
 .venv/
 venv/
+.pytest_cache/
+.ruff_cache/
 .ipynb_checkpoints/
+notebooks/**/*.nbconvert.ipynb
 node_modules/
 dist/
 build/
-.idea/
-.vscode/
-.DS_Store
-Thumbs.db
+*.tsbuildinfo
+
+# ---- Spark ----
 spark-warehouse/
 metastore_db/
 derby.log
 
-# ---- split_manifest chứa subject_id của MIMIC: không bao giờ commit ----
-**/split_manifest*.json
-
-# ---- Kết quả thí nghiệm GĐ3: chỉ số tổng hợp, không chứa dữ liệu bệnh nhân ----
-!experiments/**/results*.csv
+# ---- IDE / hệ điều hành / công cụ ----
+.idea/
+.vscode/
+.claude/
+.DS_Store
+Thumbs.db

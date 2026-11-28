@@ -1,0 +1,2 @@
+case_id,member,strategy,model,params,data_version,split_seed,roc_auc,pr_auc,positive_rate,f1,threshold,brier,seconds,note
+S0_lr_median_baseline,chuong,S0,LogisticRegression,"{""imputer"": ""median"", ""max_iter"": 2000, ""scaler"": ""standard""}",v1,42,0.83315,0.29874,0.04834,0.34245,0.17661,0.03959,2.16487,"baseline chung, đánh giá trên validation"

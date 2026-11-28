@@ -5,13 +5,12 @@ import csv
 import subprocess
 import sys
 
-import pandas as pd
 import pytest
 
-from experiments.common.config import REPO_ROOT, RESULT_COLUMNS
-from experiments.common.data import load_gold
-from experiments.common.split import make_split, save_manifest
-from experiments.khoe.run_xgboost import (
+from ml.common.config import REPO_ROOT, RESULT_COLUMNS
+from ml.common.data import load_gold
+from ml.common.split import make_split, save_manifest
+from ml.models.xgboost_model import (
     CASE_DEFAULT, CASE_OPTUNA, CASE_WEIGHTED, build_pipeline, execute,
     expected_features, validate_gold, validate_manifest,
 )
@@ -63,7 +62,7 @@ def test_no_silent_overwrite_and_no_s3_escape(fake_gold, tmp_path):
 
 def test_split_locked_requires_correct_hash(fake_gold):
     gold, split = fake_gold
-    from experiments.common.split import load_manifest
+    from ml.common.split import load_manifest
     m = load_manifest(str(split))
     with pytest.raises(ValueError, match="SHA256"):
         validate_manifest(m, locked=True)
